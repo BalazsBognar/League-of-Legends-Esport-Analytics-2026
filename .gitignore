@@ -205,3 +205,45 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ==============================================================================
+# League of Legends Esport Analytics - Project Specific Ignore Rules
+# ==============================================================================
+
+# --- Large Media & Broadcast Stream Directories ---
+Streams/
+CVAT_Clips/
+CVAT_Clips_BFX_Game1/
+*.mp4
+
+# --- Large Datasets & Frame Extractions ---
+Data/
+YOLO_Dataset/
+
+# --- Massive CSV Files (> 100MB) ---
+master_ml_dataset.csv
+master_champs.csv
+event_driven_eda_sample*.csv
+eda_sample.csv
+
+# --- Archives & Zip Packages ---
+*.zip
+
+# --- Training Outputs, Scratch & Temp Directories ---
+runs/
+scratch/
+temp_*/
+Plots/diag/
+
+# --- Root pretrained weights cache (kept organized in weights/) ---
+/yolov8n.pt
+
+# --- Diagnostic Dumps (Preserve LCK Wings anchor template) ---
+_diag/*
+!_diag/lck_wings_template.png
+
+# --- Temporary Test CSV Outputs (final results live in Plots/) ---
+extracted_data.csv
+extracted_champions.csv
+lower_hud_data.csv
+hle_vs_t1_game1_lower_data.csv

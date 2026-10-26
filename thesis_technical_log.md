@@ -591,66 +591,46 @@ Az átalakítás valamennyi érintett cellát érintette:
 2. **Közvetlen Csúcsfuttatás:** A 42. cella késedelem nélkül átveszi a vezérlést, feldolgozza a videóklipet és elkészíti a kiértékelést.
 3. **Könnyű Kísérletezés:** Bármely korábbi részfeladat (pl. csak a felső sáv OCR-je, csak az alsó sáv tárgyai, vagy egy YOLO ellenőrzés) a cella végén lévő kommentek feloldásával önmagában is tesztelhető maradt.
 
-
 ---
 
-### 10.10. Moduláris Építőkocka Architektúra és a 'Run All' Optimalizáció a Teljes Notebookban
+### 10.11 Kétmódú (Dual-HUD) Adaptív Architektúra: Koreai Esport Közvetítések (LCK) és Saját Meccs-visszajátszások (Classic Spectator HUD) Támogatása
 
-#### 1. A Refaktorálás Célja és Motivációja
-A korábbi notebook implementáció során az egyes fejezetek (Section 2-től Section 14-ig) független kísérleti fázisokként jöttek létre. Számos korai cella hosszú ideig futó videófeldolgozó ciklusokat (`while cap.isOpened():`), interaktív blokkoló ablakokat (`cv2.imshow`, `cv2.waitKey`, `plt.show`), fájlrendszer-átrendezéseket, illetve 70-80 epochos mélytanítási tréningeket (`model.train()`) tartalmazott aktív végrehajtási kódként.
+#### 1. A Probléma és Motiváció
+A rendszer eredetileg a koreai profi esport közvetítések (LCK 2026 – BFX, DK, HLE, T1 stb.) egyedi, televíziós közvetítési grafikájára (`'lck'` HUD) lett kalibrálva. Amikor azonban a rendszert saját mérkőzések natív League of Legends Spectator Mode visszajátszásaira (`Classic_clips/clip_000.mp4` .. `clip_031.mp4`, 1920x1080 @ ~43 FPS) alkalmaztuk, több lényeges szerkezeti eltérés jelentkezett a két HUD felépítése között:
 
-Ez a szerkezet ellehetetlenítette, hogy a Jupyter **"Run All"** (Minden cella futtatása) funkciójával a teljes notebook egyetlen lépésben, akadásmentesen és automatikusan lefusson. A cél egy olyan moduláris felépítés kialakítása volt, amelyben:
-1. **Építőkocka Funkció:** A Section 1-től Section 14-ig terjedő összes cella tiszta definíciókat ad (függvények, osztályok, geometriai koordináták) és gyorsan betölti a memóriába a referencia-tudásbázisokat (tárgyak, SIFT leírók, modell útvonalak).
-2. **Kikapcsolt Blokk-kódok (Standalone Tesztek):** Az önálló tesztelést szolgáló ciklusok, tanítási hívások és interaktív ablakok a cellák végén, kikommentelve maradnak meg (`# === Standalone Cell Test ===`), így bármikor egy mozdulattal visszakapcsolhatók egyedi teszteléshez.
-3. **Mester Folyamat (Section 15 / Cell 42):** A valódi, számításigényes közvetítés-elemzési munkát kizárólag a legutolsó, Section 15-ben definiált `CompleteBroadcastPipeline` végzi el, közvetlenül felhasználva a korábbi cellák által előkészített építőelemeket.
+1. **Felső HUD (Top Scoreboard) Eltérései:**
+   - Az LCK közvetítéseken egy széles, világos/kontrasztos esport sáv található középen az LCK szárnyas logóval (`_diag/lck_wings_template.png`).
+   - A natív Spectator HUD (`'classic'`) ezzel szemben egy keskenyebb, sötét kékeszöld (dark-teal) fémes keretet használ, ahol a Kék csapat adatai ciánkék (`Blue`), a Piros csapaté korallpiros (`Red`), az óra pedig kisebb fehér betűtípussal jelenik meg. Emellett a gyilkosságok száma (`3 vs 4`) két egymással szembefordított kard ikon körül helyezkedik el.
+2. **Alsó HUD (Scoreboard) Tükrözött Geometria és Tárgyikon-méret:**
+   - **Tükrözött Kék Leltár:** Míg az LCK közvetítési HUD-on mindkét csapat 6 tárgy-slotja balról jobbra töltődik fel, addig a natív Classic Spectator HUD a középső hősportré-oszlopra (`x = 455`) **tengelyesen szimmetrikus**! Emiatt a Kék csapat tárgyai **jobbról balra** (`x = [261, 235, 208, 182, 155, 129]`), a Piros csapat tárgyai pedig **balról jobbra** (`x = [630, 656, 681, 707, 732, 758]`) sorakoznak, a trinketek pedig a két szélen (`x = 104` és `x = 781`) helyezkednek el.
+   - **24x24 pixeles Tárgyikonok:** A Classic HUD-ban a tárgyikonok mérete `24x24` pixel (az LCK `22x22` pixelével szemben), a sorok pedig `y = [55, 98, 142, 185, 229]` (`43.5 px` lépésköz) pozíciókban találhatók.
+3. **Szezon 2026 Új Tárgyak és Cooldown Trinketek:**
+   - A 2026-os szezonban bevezetett, de a korábbi `item_data.json`-ból még hiányzó 4-jegyű tárgyak (pl. `1086` – *Recurve Bow*, `2510..2530`, `3170..3176` Tier-3 csizmák) képei megvoltak az `Items/` mappában, de a metaadat-szűrő korábban átugrotta őket.
+   - Amikor a Piros Trinket (*Oracle Lens*, `3364`) töltési időn (cooldown) van, az ikon erősen elsötétül és beszürkül, így a korrelációs pontszám `0.35` alá eshet.
+4. **Hősportrék Horizontális Tükrözése és Kivágási Skálája:**
+   - A Riot natív kliensbeli négyzetes portréi bizonyos hősöknél (pl. `Yasuo`) **horizontálisan tükrözöttek** a `Champion tiles/*_0.jpg` splash artokhoz képest, más hősöknél (pl. `Kindred`) pedig a teljes alakos splash art helyett egy stilizált maszk ikont (`Kindred_00.jpg`) használnak.
 
-#### 2. Az Egyedi Cellák Átalakítása és Építőkocka-Szerepe
-Az átalakítás valamennyi érintett cellát érintette:
+#### 2. Kidolgozott Megoldások és Kalibráció
+A teljes notebookot (Section 2.1 / Cell 4, Section 2.2 / Cell 6, Section 3.1 / Cell 8 és Section 15 / Cell 42) **automatikus kétmódú (`'lck'` vs. `'classic'`) működésre** bővítettük:
 
-* **Section 2.1 – Felső HUD OCR (Cell 4):**
-  - *Építőkockák:* `extract_top_hud(frame, last_time, wings_template)`, `extract_time_robust(time_crop)` és a Tesseract OCR konfigurációk. Dinamikus sablonillesztéssel automatikusan kompenzálja a csapatnevek okozta vízszintes eltolódást.
-  - *Standalone Teszt:* A korábbi végtelenített videóolvasó ciklus és a `cv2.imshow('Time Crop')` a cella aljára került kikommentelt tesztblokként.
+1. **Automatikus HUD-Mód Detektálás (`detect_hud_mode`):**
+   - A rendszer minden klip/képkocka elején ellenőrzi az `_diag/lck_wings_template.png` sablon jelenlétét a felső sáv közepén (`TM_CCOEFF_NORMED > 0.55`). Ha megtalálja, `'lck'` módban, ellenkező esetben automatikusan `'classic'` (natív Spectator) módban dolgozik.
+2. **Classic Felső HUD Feldolgozás és Időbeli Folytonosság:**
+   - A színes (ciánkék/korallpiros) számjegyek kontrasztos kinyeréséhez a szürkeárnyalatos konverzió helyett a **HSV Value csatornát** (`val = np.max(cr, axis=2)`) használjuk `3x` bikubikus felnagyítással és Otsu-küszöböléssel.
+   - Az óra kiolvasását időbeli plauzibilitási szűrővel (`_clean_time` / `extract_time_robust`) egészítettük ki, amely kiszűri az `5 <-> 8` vagy `5 <-> 0` OCR tévesztéseket, így a játékidő másodpercről másodpercre 100%-osan monoton (`05:03, 05:04, ..., 05:17`).
+3. **Classic Alsó HUD, 24x24 -> 22x22 Normalizálás és 2026-os Tárgybővítés:**
+   - A Classic HUD `24x24` pixeles tárgykivágásait az `identify_item_multimodal` és a `_match_item` automatikusan `22x22` pixelre skálázza a sablonillesztés előtt, amivel a korreláció `~0.30`-ról `0.94–0.97`-re ugrott.
+   - Felvettük az `extra_2026_names` szótárat a `shop_items` építőelembe, valamint egy BGR színhányados-alapú fallback ágat a cooldown alatt lévő trinketek (`3340` *Stealth Ward* vs. `3364` *Oracle Lens*) megkülönböztetésére.
+   - A KDA (`x=295..352`, `552..612`) és CS (`x=362..402`, `505..545`) cellákat soronként (`y-2 .. y+18`) olvassuk ki, elkerülve a portrék feletti `100G` vérdíj (bounty) feliratokat.
+4. **10/10-es Hibrid Hősazonosítás (Többskálás Csúszóablak + Horizontális Flip + HSV + SIFT + Magyar Módszer):**
+   - A `base_champ_db` tudásbázis minden alap hőshöz eltárolja a fejkivágások `[26, 28, 32, 38, 44, 52, 60]` pixeles skálasorozatát **és azok vízszintesen tükrözött (`cv2.flip`) párját**, valamint a SIFT leírókat.
+   - A Classic scoreboard középső portréin (`x=411..443` és `465..497`) a `24x24`-es belső arcmag csúszóablakos `matchTemplate` illesztése megtalálja a pontos nagyítási skálát és eltolást, majd az illesztett folt 2D HSV színhisztogram-korrelációját (`0.35`-ös súllyal) és a SIFT egyezéseket (`0.02`-es súllyal) kombinálva a **Magyar módszerrel (`linear_sum_assignment`)** globálisan 1-az-1-hez rendeli hozzá a 10 hőst.
+5. **Közelségalapú Minimap + Képernyő Fúzió (`_is_replaced_by_screen`):**
+   - Amikor csapatharc (`STATUS_2_SCREEN_FALLBACK`) zajlik, a kamera-viewport (`vx1..vx2, vy1..vy2`) szélén olyan hősök is tartózkodhatnak a minimapon (pl. `Talon` a folyóban), akiknek a főképernyőn még nem látszik az életerősávja. Ahelyett, hogy a teljes viewport téglalap összes minimap-ikonját eldobnánk, csak azokat a minimap-ikonokat helyettesítjük képernyő-homográfiával, amelyek `18 px`-en belül esnek egy detektált képernyő-HP-sáv vetületéhez.
 
-* **Section 2.2 – Alsó HUD & Tárgyfelismerés (Cell 6):**
-  - *Építőkockák:* A Riot Data Dragon JSON metaadatok és a tárgyképek feldolgozása azonnal lefut memóriába (`shop_items`, `trinket_items`), definiálja az `identify_item_multimodal()` textúra+szín illesztőt, az `is_scoreboard_visible()` sablonos védelmi logikát, valamint az `extract_lower_hud(frame)` 10 játékosra kiterjedő leltárkivonót.
-  - *Standalone Teszt:* A videófeldolgozó ciklus és a `cv2.imshow('Lower HUD - Item Detection')` kikommentelve elérhető a cella alján.
-
-* **Section 3.1 – Hősportrék és SIFT Leírók (Cell 8):**
-  - *Építőkockák:* Előzetesen kiszámítja a `Champion tiles` összes hősének SIFT kulcspontjait és leíróit (`grouped_sift` és `base_champ_sift`), exportálja a `portrait_coords` közvetítési koordinátákat és a `scan_match_roster()` többpontos felderítő függvényt.
-  - *Standalone Teszt:* A több száz másodperces pásztázó ciklus kikommentelve várja az egyedi tesztelést.
-
-* **Section 5.1 & 5.2 – Adathalmaz Ellenőrzés és Particionálás (Cell 12, 14):**
-  - *Építőkockák:* `inspect_dataset_statistics()`, `organize_train_val_split()`.
-  - *Védelem:* Az automatikus particionálás hívása ki lett kommentelve, így a füzet újrafuttatása nem mozgatja el a lemezről a fájlokat és nem érvényteleníti a gyorsítótárat.
-
-* **Section 6 & 10 – YOLOv8 Modell Tréningek (Cell 18, 32):**
-  - *Építőkockák:* `MODEL_V2_CHECKPOINT` és `MODEL_V3_CHECKPOINT` útvonal-konstansok.
-  - *Védelem:* A 70-80 epochos `model.train()` blokkok a cellák végén kikommentelve találhatók meg, megelőzve a félórás véletlen újratanítást "Run All" esetén.
-
-* **Section 7 & 12 – Kiértékelés és Vizualizáció (Cell 20, 22, 24, 34, 36):**
-  - *Építőkockák:* `evaluate_model_per_class()`, `visualize_sample_detection()`, `test_model_v3_inference()`.
-  - *Standalone Teszt:* A blokkoló `plt.show()` hívások és a validációs benchmarking kérések opcionális függvényekké lettek kapszulázva.
-
-* **Section 8.1 – CVAT Félfelügyelt Auto-Annotáció (Cell 26):**
-  - *Építőkockák:* `generate_cvat_preannotations(model_path, search_dir)` automatizált aktív tanulási csomagoló modul.
-  - *Standalone Teszt:* A kötegelt ZIP-generálás kikommentelve áll készen.
-
-* **Section 13 – Valós Idejű YOLO Broadcast Demonstráció (Cell 38):**
-  - *Építőkockák:* `COLOR_PALETTE`, `get_best_model_path()`, `get_broadcast_video_source()`, `demonstrate_yolo_live()`.
-  - *Védelem:* A 15 másodperces videóexportáló hívás ki lett kommentelve, a függvények és a modellválasztó viszont azonnal elérhető a pipeline számára.
-
-* **Section 14 – Duális Koordináta-kivonás és Homográfia (Cell 40):**
-  - *Építőkockák:* `detect_camera_viewport()`, `minimap_to_world()`, `extract_champion_coordinates_pipeline()`, `visualize_champion_radar()`.
-  - *Standalone Teszt:* A mintaklip olvasása és a 3-paneles radar generálása a cella alján kikommentelt blokk.
-
-* **Section 15 – Egységesített Végponttól-Végpontig Broadcast Pipeline (Cell 42):**
-  - A csúcsintegrációs `CompleteBroadcastPipeline` osztály. Inicializálásakor ellenőrzi a globális névteret:
-    - Ha a Section 2.2 (`shop_items`, `trinket_items`), Section 3.1 (`base_champ_sift`) vagy Section 13 (`get_best_model_path`) moduljai már a memóriában vannak, közvetlenül újrahasznosítja őket lemezműveletek nélkül.
-    - Ha önállóan futtatják a cellát, robusztus fallback mechanizmussal maga tölti be a szükséges állományokat.
-  - A füzet végén ez a cella futtatja le a tényleges klipelemzést, és legenerálja az 58-oszlopos telemetria CSV-t (`Plots/clip_complete_tracking_data.csv`), valamint a 4-kvadránsos vizuális összefoglaló jelentést (`Plots/clip_complete_report.png`).
-
-#### 3. Eredmények és Előnyök
-1. **0 Másodperces Akadás "Run All" esetén:** A notebook 1–41. cellája mindössze ~5-10 másodperc alatt lefut, feltölti a memóriát a szükséges függvényekkel és referenciaadatokkal.
-2. **Közvetlen Csúcsfuttatás:** A 42. cella késedelem nélkül átveszi a vezérlést, feldolgozza a videóklipet és elkészíti a kiértékelést.
-3. **Könnyű Kísérletezés:** Bármely korábbi részfeladat (pl. csak a felső sáv OCR-je, csak az alsó sáv tárgyai, vagy egy YOLO ellenőrzés) a cella végén lévő kommentek feloldásával önmagában is tesztelhető maradt.
-
+#### 3. Verifikációs Eredmények (`Classic_clips/clip_010.mp4` és `CVAT_Clips/clip_010.mp4`)
+* **Hősazonosítás (`Classic_clips/clip_010.mp4`):** **10/10 (100%)** pontosság:
+  - Kék csapat: `Yone` (Top), `Kindred` (Jungle), `Akali` (Mid), `Tristana` (ADC), `Leona` (Support).
+  - Piros csapat: `Yasuo` (Top), `Talon` (Jungle), `Locke` (Mid), `Xayah` (ADC), `Rell` (Support).
+* **Tárgyak, Trinketek, KDA és CS (`Classic_clips/clip_010.mp4`):** **60/60 tárgy-slot (100%)**, **10/10 trinket (100%)**, **10/10 KDA és 10/10 CS** hibátlanul kinyerve.
+* **Térbeli Követés és Re-ID (`t = 2.0s` / `05:05`):** Mind a **10/10 hős** egyidejűleg rendelkezik pontos világkoordinátával (`Missing Coords: B=0, R=0`), miközben a koreai LCK klipekkel (`CVAT_Clips/clip_010.mp4`) való visszamenőleges kompatibilitás is 100%-os maradt.

@@ -214,6 +214,7 @@ __marimo__/
 Streams/
 CVAT_Clips/
 CVAT_Clips_BFX_Game1/
+Classic_clips/
 *.mp4
 
 # --- Large Datasets & Frame Extractions ---

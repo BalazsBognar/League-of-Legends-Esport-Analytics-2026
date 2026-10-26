@@ -242,6 +242,7 @@ Plots/diag/
 # --- Diagnostic Dumps (Preserve LCK Wings anchor template) ---
 _diag/*
 !_diag/lck_wings_template.png
+!_diag/summoners_rift_clean_map.png
 
 # --- Temporary Test CSV Outputs (final results live in Plots/) ---
 extracted_data.csv

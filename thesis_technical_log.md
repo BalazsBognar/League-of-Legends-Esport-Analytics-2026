@@ -634,3 +634,50 @@ A teljes notebookot (Section 2.1 / Cell 4, Section 2.2 / Cell 6, Section 3.1 / C
   - Piros csapat: `Yasuo` (Top), `Talon` (Jungle), `Locke` (Mid), `Xayah` (ADC), `Rell` (Support).
 * **Tárgyak, Trinketek, KDA és CS (`Classic_clips/clip_010.mp4`):** **60/60 tárgy-slot (100%)**, **10/10 trinket (100%)**, **10/10 KDA és 10/10 CS** hibátlanul kinyerve.
 * **Térbeli Követés és Re-ID (`t = 2.0s` / `05:05`):** Mind a **10/10 hős** egyidejűleg rendelkezik pontos világkoordinátával (`Missing Coords: B=0, R=0`), miközben a koreai LCK klipekkel (`CVAT_Clips/clip_010.mp4`) való visszamenőleges kompatibilitás is 100%-os maradt.
+
+
+---
+
+### 10.12. Hardverfüggetlen YOLOv8 Futásidejű Eszközválasztás és Teljes Mérkőzéses Idősoros Telemetria Utófeldolgozás (GEN vs HLE Game 4)
+
+#### 1. Hardverfüggetlen YOLOv8 Eszközválasztás (`CUDA` vs. `CPU` Fallback)
+* **Probléma:** A `CompleteBroadcastPipeline` (Section 15 / Cell 42), valamint a 13. és 14. fejezetekbeli `model.predict(source=frame, conf=conf_thresh, imgsz=1280, device=0, verbose=False)` hívások fixen bedrótozott `device=0` paramétert tartalmaztak. Olyan futtatókörnyezetben, ahol a PyTorch CPU-only csomagként van telepítve (`torch.cuda.is_available() == False`), az Ultralytics `select_device()` függvénye `ValueError: Invalid CUDA 'device=0' requested` kivétellel leállt.
+* **Megoldás:** Eltávolítottuk a fix `device=0` kényszerítést mind az 5 `model.predict()` hívásból az [`Image Recognition.ipynb`](file:///e:/BME/League-of-Legends-Esport-Analitika-2026/Image%20Recognition.ipynb) notebookban. Az Ultralytics motor így futási időben automatikusan ellenőrzi a CUDA elérhetőségét: dedikált NVIDIA GPU esetén automatikusan a `0`-s eszközt választja, míg CPU-only környezetben hiba nélkül átvált CPU végrehajtásra.
+
+#### 2. Üres Telemetria Fájlok Védelme (`EmptyDataError` kiküszöbölése)
+* **Probléma:** A 16. fejezet (`Full-Match CSV Analytics`) végrehajtó blokkja kizárólag a `Plots/bfx_vs_dk_game4_complete_tracking_data.csv` útvonalat kereste az `os.path.exists(p)` feltétellel. Mivel ez a fájl a lemezen 0 bájtos (üres) volt, a `pd.read_csv()` hívás `EmptyDataError: No columns to parse from file` hibát dobott, miközben a ténylegesen kinyert, $0.5\text{ s}$-os mintavételezésű teljes mérkőzés adathalmaz a `Plots/GEN_vs_HLE_Game4_complete_tracking_data_ half_a_second.csv` fájlban állt rendelkezésre.
+* **Megoldás:** A 16. és 17. fejezetek `csv_candidates` listáját bővítettük a `GEN_vs_HLE_Game4` állományokkal, és bevezettük a fájlméret-ellenőrzést (`os.path.exists(p) and os.path.getsize(p) > 0`).
+
+#### 3. Teljes Mérkőzéses OCR Idősorok Tisztítása, Hibajavítása és Monotonitási Kényszerei (Section 16 & Section 17)
+A `Streams/GEN vs HLE Game4.mp4` teljes mérkőzés ($1654.0\text{ s}$, 3309 sor, $\Delta t = 0.5\text{ s}$ mintavételezési sűrűség) feldolgozása során keletkezett nyers CSV (`Plots/GEN_vs_HLE_Game4_complete_tracking_data_ half_a_second.csv`) elemzése négy jellegzetes OCR- és idősoros anomáliát tárt fel, amelyeket algoritmikusan javítottunk:
+
+1. **Közvetítési Bevezető (Pre-Game Intro) Levágása és Mintavételezés-adaptív Gördülő Ablakok:**
+   - *Anomália:* A videó első $26.5$ másodpercében (`video_sec` $\in [0.0, 26.5]$, mielőtt az élő játékbeli HUD óra `00:53`-nál megjelenne) a `match_time` értéke `00:00`, az arany oszlopokban pedig kóbor OCR számjegyek (`'4'`, `'7'`) jelentek meg. Emellett a $0.5\text{ s}$-os mintavételezés miatt a fix 15 elemű gördülő ablak (`rolling(15)`) valójában csak $7.5$ másodpercet fedett le.
+   - *Megoldás:* A `match_time` (`MM:SS`) másodperccé alakítása (`match_sec`) után a rendszer automatikusan levágja az első valós játékóra-leolvasás (`match_sec > 0`) előtti sorokat, a mintavételezési időlépést ($\Delta t = \text{median}(\Delta \text{video\_sec})$) pedig dinamikusan meghatározza, és ehhez skálázza a $15\text{ s}$-os (`win_15s = 31` sor) és $30\text{ s}$-os (`win_30s = 61` sor) gördülő szűrőket.
+
+2. **Csapatarany (`blue_gold`, `red_gold`) Regex-tisztítása, Tizedespont-helyreállítás és Monotonitás:**
+   - *Anomália:* Az eredeti `parse_gold` függvényben a `25.0 < v <= 1000.0: return v / 10.0` feltétel a $25\text{K}$ feletti normál aranyértékeknél és a duplázott `'K'` karaktereknél (`'56.2KK'`) hibás konverziót vagy `NaN` értéket eredményezett.
+   - *Megoldás:*
+     - Minden nem-szám és nem-tizedespont karaktert eltávolítunk (`re.sub(r'[^0-9.]', '', str(val))`), és kezeljük az esetleges többszörös tizedespontokat.
+     - A hiányzó tizedespontot (pl. `'563K'` $\to 563.0$) kizárólag a fizikailag lehetséges $120.0 < v \le 1000.0$ tartományban osztjuk vissza $10$-zel ($56.3\text{K}$).
+     - A minionok összecsapása előtti szakaszban ($t_{\text{match}} < 75\text{ s}$) a csapataranyat a szabályos $2.5\text{K}$ ($5 \times 500\text{g}$) kezdőértékre horgonyozzuk.
+     - A $30\text{ s}$-os gördülő medián szűrés ($|\text{raw} - \text{med}| < 3.0\text{K}$) és lineáris interpoláció után **monoton növekvő kényszert (`np.maximum.accumulate`)** alkalmazunk, mivel a League of Legends felső HUD-ján megjelenő összesített csapatarany a mérkőzés során soha nem csökkenhet.
+
+3. **KDA Halál-összeg (`_sum_opp_deaths`) Felülírási Hiba Javítása a 16. Fejezetben:**
+   - *Anomália:* A `parse_and_clean_match_csv()` függvényben a `raw_v = opp_d if opp_d.notna().any() else fallback_v` logika akkor is lecserélte a teljes `blue_kills` / `red_kills` oszlopot az alsó HUD KDA-ból számolt halálösszegre, ha a 3309 sorból csupán néhány sorban volt olvasható mind az 5 játékos KDA-ja, `NaN`-ra törölve a felső HUD érvényes gyilkosság-leolvasásait.
+   - *Megoldás:* Elsődleges forrásként a felső HUD `blue_kills` és `red_kills` oszlopait használjuk, és az ellenfél KDA halálösszegét kizárólag a hiányzó értékek pótlására (`base_series.fillna(opp_d)`) vesszük igénybe.
+
+4. **Gyilkosságok (`kills`) és Tornyok (`towers`) Kauzális Lépésköz-szűrése és Hozzátapadt Számjegyek Javítása (`clean_cumulative_counter`):**
+   - *Anomália:* A `blue_kills` oszlopban az OCR esetenként egy hátsó nullát/számjegyet olvasott a tényleges érték mögé (`120` a `12` helyett $t \approx 1605\text{ s}$-nál, illetve `130` a `13` helyett $t \approx 1635\text{ s}$-nál). A `red_kills` oszlopban a mérkőzés végén (3256–3305. sorok, $\sim 25$ másodpercen keresztül) egy szomszédos grafikai elem miatt az OCR folyamatosan `75` és `753` értéket adott vissza a valós $5\text{--}6$ helyett. Mivel ez az 50 soros blokk szélesebb volt a 15 elemű gördülő medián ablaknál, az egyszerű `where(kills <= 40)` szűrés `NaN` szakadást hagyott a görbén.
+   - *Megoldás:* Bevezettük a `clean_cumulative_counter()` állapotfüggő (kauzális) szűrőt:
+     - Fenntartunk egy validált $k_{\text{base}}$ bázisértéket (amely $t_{\text{match}} < 60\text{ s}$ esetén $0$-ról indul).
+     - **Hozzátapadt számjegy visszajavítása (Trailing-Digit Repair):** Ha $v > k_{\max}$, de $\lfloor v / 10 \rfloor \in [k_{\text{base}}, k_{\text{base}} + \Delta k_{\max}]$ (pl. $120 \to 12$, $130 \to 13$), az értéket automatikusan $\lfloor v / 10 \rfloor$-re javítjuk.
+     - **Lépésköz-korlát (Step-Change Gate):** Minden olyan leolvasást, amely kívül esik a $[k_{\text{base}} - 2, k_{\text{base}} + \Delta k_{\max}]$ tartományon (ahol gyilkosságoknál $\Delta k_{\max} = 5$, tornyoknál $\Delta k_{\max} = 2$), az algoritmus OCR-kiugrásként (`NaN`) elutasít (így a `75` és `753` értékek azonnal kiesnek).
+     - Végül gördülő medián simítást, előre/hátra kitöltést (`.ffill().bfill()`) és monoton kumulációt (`np.maximum.accumulate`) alkalmazunk.
+
+5. **4-Paneles Összefoglaló Telemetria Vizualizáció (Section 17 / Utolsó Cella):**
+   - Az [`Image Recognition.ipynb`](file:///e:/BME/League-of-Legends-Esport-Analitika-2026/Image%20Recognition.ipynb) utolsó cellája mostantól angol nyelvű dokumentációval, 4 időben szinkronizált panelen ábrázolja és elmenti (`Plots/GEN_vs_HLE_Game4_telemetry_summary.png`) a tisztított mérkőzés-telemetriát:
+     1. **Team Economic Growth:** Kék (GEN) és Piros (HLE) összesített csapatarany ($\text{K}$).
+     2. **Team Gold Advantage ($\Delta \text{Gold}$):** Aranyelőny területdiagram.
+     3. **Cumulative Team Kills & Tower Destructions:** A kauzális szűrővel megtisztított gyilkosság- és toronyszám lépcsős (step) görbéi.
+     4. **On-Screen Game Intensity & YOLOv8 Entity Detections:** A képernyőn detektált aktív entitások $15$ másodperces mozgóátlaga.

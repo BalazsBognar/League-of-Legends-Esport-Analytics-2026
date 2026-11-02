@@ -185,10 +185,10 @@ Az alsó közvetítési sávból (`lower_hud = frame[810:1080, 500:1400]`) tört
    - A $22 \times 22$ képpontos tárgyikonok függőleges kezdőpozíciója: $y_{\text{row}} = 57 + i \cdot 44$ ($57, 101, 145, 189, 233$).
 
 2. **Vízszintes (X) oszlopszerkezet és a 7. rejtett slot:**
-   - A korábbi eltolódást az okozta, hogy a trinket (őrszem) és a 6 alap tárgyhely között egy **speciális feladat/quest slot** található (pl. Support quest ikon, ADC speciális tárgy).
+   - A korábbi eltolódást az okozta, hogy a trinket (őrszem) és a 6 alap tárgyhely között egy **speciális feladat/quest slot** található (pl. Support quest ikon / Control Ward, ADC speciális cipő).
    - Az oszlopok távolsága szigorúan egyenletes: **29 pixel**.
-   - **Kék csapat:** Trinket $x = 59$, speciális quest $x = 88$, 6 tárgyhely $x = 117 + j \cdot 29$ ($j \in [0..5] \rightarrow 117, 146, 175, 204, 233, 262$).
-   - **Piros csapat:** 6 tárgyhely $x = 637 + j \cdot 29$ ($j \in [0..5] \rightarrow 637, 666, 695, 724, 753, 782$), speciális quest $x = 811$, Trinket $x = 840$.
+   - **Kék csapat:** Trinket $x = 59$, speciális quest $x = 78$ ($78..100$), 6 tárgyhely $x = 117 + j \cdot 29$ ($j \in [0..5] \rightarrow 117, 146, 175, 204, 233, 262$).
+   - **Piros csapat:** 6 tárgyhely $x = 637 + j \cdot 29$ ($j \in [0..5] \rightarrow 637, 666, 695, 724, 753, 782$), speciális quest $x = 802$ ($802..824$), Trinket $x = 840$.
 
 Ezzel a kalibrációval az összes tárgy doboza több mérkőzésen és eltérő időpontokban is pixelpontosan illeszkedik az ikonokra.
 
@@ -599,7 +599,7 @@ Az átalakítás valamennyi érintett cellát érintette:
 A rendszer eredetileg a koreai profi esport közvetítések (LCK 2026 – BFX, DK, HLE, T1 stb.) egyedi, televíziós közvetítési grafikájára (`'lck'` HUD) lett kalibrálva. Amikor azonban a rendszert saját mérkőzések natív League of Legends Spectator Mode visszajátszásaira (`Classic_clips/clip_000.mp4` .. `clip_031.mp4`, 1920x1080 @ ~43 FPS) alkalmaztuk, több lényeges szerkezeti eltérés jelentkezett a két HUD felépítése között:
 
 1. **Felső HUD (Top Scoreboard) Eltérései:**
-   - Az LCK közvetítéseken egy széles, világos/kontrasztos esport sáv található középen az LCK szárnyas logóval (`_diag/lck_wings_template.png`).
+   - Az LCK közvetítéseken egy széles, világos/kontrasztos esport sáv található középen az LCK szárnyas logóval (`lck_wings_template.png`).
    - A natív Spectator HUD (`'classic'`) ezzel szemben egy keskenyebb, sötét kékeszöld (dark-teal) fémes keretet használ, ahol a Kék csapat adatai ciánkék (`Blue`), a Piros csapaté korallpiros (`Red`), az óra pedig kisebb fehér betűtípussal jelenik meg. Emellett a gyilkosságok száma (`3 vs 4`) két egymással szembefordított kard ikon körül helyezkedik el.
 2. **Alsó HUD (Scoreboard) Tükrözött Geometria és Tárgyikon-méret:**
    - **Tükrözött Kék Leltár:** Míg az LCK közvetítési HUD-on mindkét csapat 6 tárgy-slotja balról jobbra töltődik fel, addig a natív Classic Spectator HUD a középső hősportré-oszlopra (`x = 455`) **tengelyesen szimmetrikus**! Emiatt a Kék csapat tárgyai **jobbról balra** (`x = [261, 235, 208, 182, 155, 129]`), a Piros csapat tárgyai pedig **balról jobbra** (`x = [630, 656, 681, 707, 732, 758]`) sorakoznak, a trinketek pedig a két szélen (`x = 104` és `x = 781`) helyezkednek el.
@@ -614,7 +614,7 @@ A rendszer eredetileg a koreai profi esport közvetítések (LCK 2026 – BFX, D
 A teljes notebookot (Section 2.1 / Cell 4, Section 2.2 / Cell 6, Section 3.1 / Cell 8 és Section 15 / Cell 42) **automatikus kétmódú (`'lck'` vs. `'classic'`) működésre** bővítettük:
 
 1. **Automatikus HUD-Mód Detektálás (`detect_hud_mode`):**
-   - A rendszer minden klip/képkocka elején ellenőrzi az `_diag/lck_wings_template.png` sablon jelenlétét a felső sáv közepén (`TM_CCOEFF_NORMED > 0.55`). Ha megtalálja, `'lck'` módban, ellenkező esetben automatikusan `'classic'` (natív Spectator) módban dolgozik.
+   - A rendszer minden klip/képkocka elején ellenőrzi az `lck_wings_template.png` sablon jelenlétét a felső sáv közepén (`TM_CCOEFF_NORMED > 0.55`). Ha megtalálja, `'lck'` módban, ellenkező esetben automatikusan `'classic'` (natív Spectator) módban dolgozik.
 2. **Classic Felső HUD Feldolgozás és Időbeli Folytonosság:**
    - A színes (ciánkék/korallpiros) számjegyek kontrasztos kinyeréséhez a szürkeárnyalatos konverzió helyett a **HSV Value csatornát** (`val = np.max(cr, axis=2)`) használjuk `3x` bikubikus felnagyítással és Otsu-küszöböléssel.
    - Az óra kiolvasását időbeli plauzibilitási szűrővel (`_clean_time` / `extract_time_robust`) egészítettük ki, amely kiszűri az `5 <-> 8` vagy `5 <-> 0` OCR tévesztéseket, így a játékidő másodpercről másodpercre 100%-osan monoton (`05:03, 05:04, ..., 05:17`).
@@ -681,3 +681,331 @@ A `Streams/GEN vs HLE Game4.mp4` teljes mérkőzés ($1654.0\text{ s}$, 3309 sor
      2. **Team Gold Advantage ($\Delta \text{Gold}$):** Aranyelőny területdiagram.
      3. **Cumulative Team Kills & Tower Destructions:** A kauzális szűrővel megtisztított gyilkosság- és toronyszám lépcsős (step) görbéi.
      4. **On-Screen Game Intensity & YOLOv8 Entity Detections:** A képernyőn detektált aktív entitások $15$ másodperces mozgóátlaga.
+
+---
+
+### 10.13. A 7. Tárgyrekesz (Quest Slot) és Dinamikus Tárgy-migráció Kezelése az LCK Közvetítéseken
+
+#### 1. A Probléma és Szerepkör-specifikus Tárgymigráció
+A 2026-os szezon LCK televíziós esport közvetítéseinek mélyelemzése során feltártuk, hogy az esport közvetítési felületen bizonyos játékosok felszerelése nem a klasszikus 6-os leltártömbben helyezkedik el:
+1. **Lövész (ADC) Cipő-migráció:** Az ADC hősöknél (pl. *Jhin*, *Lucian*, *Ashe*) a megvásárolt lábbeli (pl. *Berserker's Greaves 3006*, *Plated Steelcaps 3047*, *Boots of Swiftness 3009*) kikerül a 6 alap leltárhelyről, és egy dedikált 7. rekeszbe (Quest slot) vándorol át.
+2. **Támogató (Support) Küldetés- és Őrszem-migráció:** A Support játékosoknál a feladattárgy (pl. *World Atlas 3865*, *Bounty of Worlds 3869*, *Celestial Opposition 3870*, *Bloodsong 3877*) vagy a megvásárolt Ellenőrző Őrszem (*Control Ward 2055*) szintén ebbe a dedikált 7. rekeszbe kerül.
+3. **Hiányos Telemetria az Alap Modellben:** A korábbi leltár-kivonó algoritmus mereven a 6 alap oszlopot ($x \in [117..262]$ kék, $x \in [637..782]$ piros) pásztázta. Ennek következtében a telemetriai adatbázisban a lövészek lábbelije és a támogatók kulcsfontosságú tárgyai hiányoztak (`None`), holott a közvetítésen egyértelműen látszottak.
+
+#### 2. Egzakt Geometriai Kalibráció és Üres-Slot Szűrés
+A közvetítés alsó HUD-jának pixelprofil-elemzése alapján a 7. rekesz pozíciója szigorúan kötött:
+* **Kék csapat (Blue Quest Slot):** A Trinket ($x = 59$) és az 1. tárgyslot ($x = 117$) között, a $22 \times 22$ képpontos rekesz kezdőpontja:
+  $$x_{\text{blue\_quest}} = 78 \quad (78 \le x \le 100)$$
+* **Piros csapat (Red Quest Slot):** A 6. tárgyslot ($x = 782$) és a Trinket ($x = 840$) között, a kezdőpont:
+  $$x_{\text{red\_quest}} = 802 \quad (802 \le x \le 824)$$
+* **Függőleges (Y) sorok:** Megegyeznek az 5 játékossor magasságával:
+  $$y_{\text{row}} = [55, 98, 142, 185, 229] \quad (\text{lépésköz } \Delta y \approx 43.5\text{ px})$$
+
+**Sötétlila Textúrázott Háttér és Üres-Slot Diszkrimináció:**
+* Nem minden játékos rendelkezik aktív 7. tárggyal (Top, Jungle, Mid szerepkörökben a rekesz a legtöbbször üres).
+* A közvetítés alsó sávja az üres helyeken nem homogén fekete ($0$), hanem sötétlila, enyhén gradiens háttértextúrával bír, melynek szürkeárnyalatos statisztikája:
+  $$\mu_{\text{empty}} \in [10.0, 20.0], \quad \sigma_{\text{empty}} \in [0.4, 4.3]$$
+* A korábbi $\sigma < 5.0$ szórásküszöb határesetben téves detekciókat idézett elő (a sötét textúrázott pixeleket tárgyként próbálta azonosítani).
+* A küszöböt egzakt módon $\sigma < 6.0$-ra kalibráltuk:
+  $$\text{Ha } \sigma(\text{crop}) < 6.0 \implies \text{Üres rekesz (None)}$$
+  Ez a szabály **0%-ra csökkentette a hamis pozitív detekciókat** az üres rekeszekben, miközben a valódi tárgyak ikonjai ($\sigma \ge 16.0$) 100%-os megbízhatósággal azonosításra kerülnek.
+
+#### 3. Ontológiai Korrekció (Control Ward `2055`) és Adatséma Bővítés
+* **Control Ward besorolása:** A korábbi rendszerben a `2055` (Control Ward) azonosító tévesen a kizárólagos `trinket_items` halmazban szerepelt. Mivel ez valójában a boltban vásárolható fogyóeszköz, amely a normál leltárban vagy a Support quest rekeszében tartózkodik, áthelyeztük a `shop_items` tudásbázisba mind a Section 2.2 (Cell 6), mind a Section 15 (Cell 42) modulokban.
+* **CSV Séma és Belső Adatreprezentáció:**
+  - A kimeneti telemetriai CSV táblázatot bővítettük a `blue_{role}_quest` és `red_{role}_quest` oszlopokkal (ahol $\text{role} \in \{\text{top, jgl, mid, adc, sup}\}$).
+  - A pipeline belső állapotgépében a Quest rekeszben talált tárgy automatikusan beolvad a játékos összesített tárgylistájába (`items` lista), garantálva, hogy a leltárelemzés a valóságban meglévő összes felszerelési tárgyat tartalmazza.
+* **Verifikáció (`BFX vs DK Game4.mp4`):** A mérkőzés 1150. másodpercében a rendszer hibátlanul detektálta a Kék ADC cipőjét (*Berserker's Greaves 3006*), a Piros ADC tárgyát (*Opportunity 3504*), valamint a Support játékosok őrszemeit (*3102*, *2019*).
+
+---
+
+### 10.14. Közvetítési Visszajátszások (Broadcast Replay) Detektálása és Élő Telemetria Védelme
+
+#### 1. A Probléma és Kockázatelemzés
+A televíziós esport közvetítések (különösen az LCK) során a rendező rendszeresen lassított visszajátszásokat (Replay) vág be a megelőző 30–60 másodperc sorsdöntő eseményeiről (csapatharcok, gankek, toronydöntések).
+A visszajátszás alatt a képernyőn látható vizuális tartalom **nem az aktuális játékidőhöz tartozik**, hanem a múlt egy korábbi időszeletéhez. Amennyiben a képfeldolgozó rendszer ezt a szakaszt élő játékként dolgozná fel:
+1. A YOLOv8 detektor a múltbeli hősöket és életerősávokat detektálja.
+2. A térbeli koordináták hirtelen ugrást végeznek a pályán (visszaugorva a múltbeli harctérre).
+3. A folyamatos Kalman-szűrők és játékos-pályák (trajectories) helyrehozhatatlanul diszkontinuussá válnak.
+4. A csapatharc-detektáló modul hamis teamfight klasztereket regisztrál az aktuális másodpercben, torzítva az idősoros statisztikákat.
+
+#### 2. Valós Idejű Sablon Detektálás (`lck_replay_template.png`)
+Az LCK közvetítési grafikájának elemzése rávilágított, hogy a visszajátszások teljes ideje alatt a képernyő bal felső sarkában egy karakterisztikus, piros-sötétszürke sáv látható fehér `REPLAY` felirattal.
+* **Sablon Lehorgonyzása:** A referenciát kivágtuk és szabványos sablonként a gyökérkönyvtárba mentettük: `lck_replay_template.png` ($35 \times 237$ pixel).
+* **Mikro-ROI Pásztázás:** A sablonillesztést kizárólag a releváns bal felső zónára korlátozzuk:
+  $$\text{ROI} = \text{frame}[0:80, 0:320]$$
+* **Diszkriminációs Metrika:** Normalizált kereszttkorreláció (`TM_CCOEFF_NORMED`):
+  $$R = \max \frac{\sum (T - \bar{T})(I - \bar{I})}{\sqrt{\sum (T - \bar{T})^2 \sum (I - \bar{I})^2}}$$
+  - **Replay alatt:** $R \ge 0.998$ (tökéletes egyezés).
+  - **Élő adás alatt:** $R \le 0.26$ (alacsony háttérkorreláció).
+  - **Döntési küszöb:** $R_{\text{thresh}} = 0.70$.
+* **Számítási Terhelés:** A kisméretű $80 \times 320$-as ROI miatt a detektálás futásideje **kevesebb mint $0.2\text{ ms}$**, így a 60 FPS-es valós idejű feldolgozást egyáltalán nem terheli.
+
+#### 3. Kétmódú Izoláció (LCK vs. Classic HUD)
+A visszajátszás-grafika kizárólag a televíziós LCK esport közvetítések sajátossága. A natív League of Legends Spectator Mode visszajátszásoknál (`'classic'` HUD) ilyen felirat nem létezik.
+A `CompleteBroadcastPipeline.is_replay_active()` metódusban szigorú védelmi feltételt alkalmaztunk:
+```python
+if self.hud_mode != 'lck':
+    return False
+```
+Ennek köszönhetően a Classic meccsek feldolgozása során a funkció azonnal hamis értékkel tér vissza, garantálva, hogy a natív spectator felvételeken semmilyen hibás tiltás ne következzen be.
+
+#### 4. Állapotgép és Idősoros Védelem Replay Alatt
+Amikor a rendszer aktív visszajátszást detektál (`is_replay == True`):
+1. **Állapotgép:** A frame státusza azonnal `STATUS_REPLAY`-re vált.
+2. **Koordináta-követés Felfüggesztése:** A térbeli koordináták frissítése szünetel; a múltbeli hősök helyzete nem írja felül a játékosok valós idejű pályaadatait.
+3. **Telemetria Export:** A kimeneti CSV-be bekerül az `is_replay: True / False` logikai oszlop, pontosan felcímkézve a visszajátszás kezdő- és végpontját.
+4. **Elemző és Vizualizációs Szűrés (Section 16 / Cell 44):** A teljes mérkőzéses hőtérképek (heatmaps), mozgásvonalak és csapatharc-ablakok generálásakor az elemző modul automatikusan kizárja a visszajátszásos képkockákat (`df = df[df['is_replay'] == False]`), megőrizve a térbeli elemzés matematikai integritását.
+
+---
+
+### 10.15. Diagnosztikai Sablonok Rendszerezése, Felesleges Mappák Felszámolása és Tiszta Tárgy-ID Megjelenítés
+
+#### 1. Fájlrendszer Tisztítása és Sablon-konszolidáció
+A fejlesztés korai fázisaiban a vizsgálati kivágások és referencia-sablonok fragmentáltan, az `_diag/` és `Plots/diag/` mappákban helyezkedtek el. Ez megnehezítette a kód hordozhatóságát és felesleges lemezműveleteket eredményezett.
+* **Mappák Felszámolása:** A redundáns `_diag/` és `Plots/diag/` könyvtárakat töröltük a projektből.
+* **4 Horgonyzott Referencia-sablon a Gyökérben:** A rendszer működéséhez elengedhetetlen 4 mester sablont közvetlenül a projekt gyökérkönyvtárában horgonyoztuk le:
+  1. `lck_banner_template.png`: Az LCK alsó eredményjelző tábla jelenlétét diszkrimináló sablon ($R > 0.60$).
+  2. `lck_wings_template.png`: Az LCK felső szárnyas logó, amely a kétmódú közvetítés-típust (`lck` vs. `classic`) dönti el.
+  3. `lck_replay_template.png`: Az LCK visszajátszások észlelésére szolgáló sablon.
+  4. `summoners_rift_clean_map.png`: Summoner's Rift tiszta pályarajz a radarnézetekhez és térbeli vizualizációkhoz.
+* **Verziókezelési Tisztítás:** A `.gitignore` állományt frissítettük, biztosítva, hogy az átmeneti vizsgálati fájlok ne kerüljenek a git tárba.
+
+#### 2. Tiszta Tárgy-ID Megjelenítés és Data Dragon Integráció
+A korábbi kísérleti kódokban (Cell 6, Cell 42, Cell 44) beégetett szöveges szótárak (`extra_2026_names`) szerepeltek, amelyek manuálisan rendelték hozzá az új tárgyak neveit az ID-khoz.
+* **A Hardkódolt Névtáblák Megszüntetése:** A forráskódból eltávolítottuk a kézzel szerkesztett névtáblákat.
+* **Szabványos Riot ID Reprezentáció:** A pipeline a tárgyakat közvetlenül a hivatalos Riot Item ID-k alapján azonosítja és tárolja (pl. `3006`, `3102`, `2055`). A metaadatok forrása kizárólag a hivatalos `item_data.json` és az `Items/*.png` képgyűjtemény.
+* **Előnyök:** A rendszer függetlenné vált a manuális szöveges karbantartástól; bármely meglévő vagy jövőbeli tárgy automatikusan, hibamentesen és szabványos numerikus formátumban kerül be a telemetriai adatbázisba.
+
+---
+
+### 10.16. Univerzális Hősportré-Betöltő (120x120 PNG Avatarok) és Idézői Képességek (Summoner Spells) valamint Bajnok Szintek Érzékelő Architektúrája
+
+#### 1. A Korábbi Hősbetöltő Korlátai és az Új Képek Integrációja
+A korábbi hősfelismerő modul (Section 3.1 / Cell 8 és Section 15 / Cell 42) a Riot Games álló téglalap alakú töltőképernyős (Loading Screen) grafikáira volt kalibrálva. Emiatt három súlyos korlát terhelte:
+1. **Merev kiterjesztés- és névfüggőség:** Kizárólag a `.jpg` kiterjesztést és a `_0.jpg` utótagot fogadta el.
+2. **Kényszerített arckivágás (Hardcoded Crop):** Mivel az eredeti képek teljes alakos álló téglalapok voltak, a kód kénytelen volt a kép tetejéből és oldalaiból fix százalékokat levágni (`[0.04*h : 0.68*h, 0.14*w : 0.86*w]`).
+3. **Új képek hatása:** Amikor a hivatalos, tiszta 120x120 pixeles négyzetes hősikonokat (`Champion tiles/*.png`) bemásoltuk, az elavult betöltő a kiterjesztés miatt átugrotta volna őket, vagy a vágási logika levágta volna a hősök állát és arcszéleit.
+
+#### 2. Kétszintű Univerzális Hőstudásbázis (Smart Aspect Ratio & Hybrid Fallback)
+A notebook 8. és 42. cellájában bevezettük a hibrid, intelligens betöltőt:
+* **Elsődleges prioritás (Pristine Square PNG):** A rendszer először a 120x120-as tiszta `.png` fájlokat dolgozza fel (pl. `Aatrox.png`, `LeeSin.png`, `Rell.png`). Mivel ezek eleve négyzetes fejképek, a rendszer a teljes képet használja (`face = img`) mesterséges vágás nélkül.
+* **Másodlagos tartalék (JPG Fallback):** Ha egy újabb hős még nem szerepel a PNG készletben, a rendszer automatikusan a `*_0.jpg` állományból tölti be, és csak ekkor alkalmazza az álló téglalaphoz szükséges arckivágást.
+* **Eredmény:** A tudásbázis mind a 174 League of Legends bajnokot tartalmazza. A korábbi teszteken a hősazonosítási pontszámok drasztikusan megugrottak: a Classic meccsen a korábban határesetként illesztett hősök pontszáma 0.75-ről 4.16-ra nőtt, az LCK közvetítéseken pedig a helyes hősök SIFT/korrelációs pontszáma háromszorosa lett a második legközelebbi jelöltnek.
+
+#### 3. Idézői Képességek (Summoner Spells) és Bajnok Szintek Telemetriai Kinyerése
+A felhasználó által feltöltött 14 hivatalos Riot Data Dragon spell-ikon (`Spells/Summoner*.png`) alapján létrehoztuk a `_load_spells()` és `extract_spells_and_status()` motorokat a `CompleteBroadcastPipeline` osztályban:
+
+1. **Idézői Képességek (Summoner Spells D & F):**
+   * *LCK Geometria:* A 10 játékos 22x22 pixeles D és F foglalatai a portrék mellett helyezkednek el (Kék: x in [38, 60], Piros: x in [1858, 1880]).
+   * *Multimodális azonosítás:* A 22x22-re skálázott szürkeárnyalatos sablonillesztés és a 2D HSV színhisztogram-korreláció (0.5 * Score_TM + 0.5 * Score_HSV) segítségével a rendszer már az első érvényes képkockán (pl. t = 45 s-nél) 100%-os pontossággal beazonosítja a játékosok két spelljét (pl. Blue Top: *Teleport* és *Flash*, Red Jungle: *Ignite* és *Flash*).
+   * Mivel a Summoner Spellek a meccs során soha nem változnak meg, az azonosított képességeket a pipeline a felderítő képkockák után perzisztensen rögzíti (lockolja), így a későbbi cooldown animációk vagy elszürkülések sem okozhatnak tévesztést.
+2. **Végső Képesség (Ultimate Status) Értékelése és Elhagyása:**
+   * A végső képesség zöld drágakő indikátorának optikai észlelése kísérletileg megvalósult, azonban a tervezési döntés és a felhasználói kérés alapján a telemetriai kimenetből elhagytuk (az ulti mezőket töröltük a pipeline-ból és a CSV-ből). Ennek oka, hogy az ulti állapot másodpercenként ingadozó bináris zajt generálna a hosszú távú stratégiai idősorelemzésben, míg a spellek és szintek determinisztikus, stabil indikátorok.
+3. **Bajnok Szintek (Level 1..18):**
+   * Az 50x50 pixeles hősportrék bal alsó sarkában elhelyezkedő kör alakú szint-badge-et (y in [32, 50], x in [0, 20]) 3x felnagyítással és Otsu-küszöböléssel dolgozzuk fel.
+   * Tesseract OCR (`--psm 10 -c tessedit_char_whitelist=0123456789`) számszűrővel kinyerjük az aktuális értéket.
+   * **Kauzális Monotonitási Kényszer:** Az esport telemetriában a bajnokok szintje nem csökkenhet és időlépésenként legfeljebb 1-gyel (ritka dupla killszintlépésnél 2-vel) nőhet:
+     L_t = OCR(t), ha L_{t-1} <= OCR(t) <= min(18, L_{t-1} + 2); különben L_{t-1}.
+4. **Telemetria Kimenet (CSV Schema Frissítés):**
+   * A kimeneti CSV táblázat játékosonként 3 új oszloppal (csapatonként 15, összesen 30 új oszloppal) egészült ki:
+     - `blue_{role}_spell1`, `blue_{role}_spell2`, `blue_{role}_level`
+     - `red_{role}_spell1`, `red_{role}_spell2`, `red_{role}_level`
+---
+
+### 10.17. Kétoldali HUD Életerő (HP) és Erőforrás/Mana Sáv Százalékos Detektáló Architektúra (LCK & Classic Spectator)
+
+#### 1. Motiváció és Célkitűzés
+A közvetítések és meccsvisszajátszások taktikai elemzéséhez a térbeli pozíciók (minimap tracking) és az inventory mellett elengedhetetlen a játékosok valós idejű harci állapotának (életerő és mana/erőforrás szint) nyomon követése. Az esport közvetítések képernyőjén a hősök feletti életerősávok harc közben egymást fedhetik, vagy a látómezőn kívül eshetnek; ezzel szemben a képernyő bal és jobb oldalán rögzített HUD elemek folyamatos, determinisztikus telemetriát biztosítanak mind a 10 játékosra.
+
+#### 2. Kettős HUD Geometria és Sávstruktúra
+
+1. **LCK Esport Közvetítés (LCK Broadcast HUD):**
+   * *Elhelyezkedés:* A 10 játékos vízszintes sávjai közvetlenül a hősportrék alatt helyezkednek el mindkét oldalon.
+   * *Kék oldal (bal sidebar):* x in [6, 121] (W = 115 px), balról jobbra telítődik.
+   * *Piros oldal (jobb sidebar):* x in [1800, 1915] (W = 115 px), balról jobbra telítődik.
+   * *Vertikális pozíciók (1080p):*
+     - HP sávok (4 px magas): y in [210, 318, 424, 532, 638] a TOP, JGL, MID, ADC, SUPPORT szerepkörökhöz.
+     - Mana / Erőforrás sávok (3 px magas): 8 px-lel a HP sáv alatt (y in [218, 326, 432, 540, 646]).
+
+2. **Klasszikus Nézői Felület (Classic Spectator HUD):**
+   * *Elhelyezkedés:* A két oldalsó oszlopban közvetlenül a 48x48 pixeles hősportrék alatt.
+   * *Kék oldal (bal):* $x \in [28, 76]$ ($W = 48\text{ px}$), balról jobbra telítődik (LTR).
+   * *Piros oldal (jobb):* $x \in [1844, 1892]$ ($W = 48\text{ px}$), **tükrözve: jobbról balra telítődik** (RTL, $x = 1892 \to 1844$).
+   * *Vertikális pozíciók (1080p):*
+     - Játékoskártya horgonyok: $y_{base} = 147 + i \cdot 103$ px ($y_{base} \in [147, 250, 353, 456, 559]$).
+     - HP sávok (6 px magas): y in [208, 311, 414, 517, 620].
+     - Mana / Erőforrás sávok (5 px magas): 9 px-lel lejjebb (y in [217, 320, 423, 526, 629]).
+
+#### 3. Százalékos Számítási Algoritmus és Speciális Játékmechanikák Kezelése
+A kezdeti implementációban felmerült pontatlanságok okainak elemzése és azok robusztus kiküszöbölése:
+* **Konténer-szélesség és Portré-Geometria Pontosítása:** A korábbi feltételezés ($x \in [28, 152]$, $W = 124\text{ px}$) tévesen a portré melletti statisztikai/tárgy mezőt is a sáv részének tekintette. Mivel a tényleges zöld életerősáv és kék erőforrássáv kizárólag a portré 48 pixeles szélessége alatt fut ($x \in [28, 76]$ és $x \in [1844, 1892]$), a 124 pixellel történő osztás a teljes életerőt mesterségesen $46 / 120 \approx 38.3\%$-ra torzította le (a felhasználó által észlelt pontatlanság forrása). A konténer határait a fizikai sávra kalibrálva ($W = 48\text{ px}$, $W_{eff} = W - 2 = 46\text{ px}$) a kezdeti teljes életerő pontosan $100.0\%$-ra áll be, míg a sérülések precíz, valósághű százalékokat mutatnak.
+* **Kezdőpont-kereső (Dark Border Tolerance):** A HUD életerő sávok bal (illetve piros oldalon jobb) szélét egy 2-3 pixel széles sötét, lekerekített keret határolja. A korábbi pásztázó algoritmus az $i=0$ indexen a sötét keret miatt azonnal megszakadt (`break`), így érvényes sávok esetén is hamis 0.0%-ot adott vissza. Az új algoritmus az első 5 pixelben intelligensen megkeresi a sáv tényleges kezdetét (`first_act`), és onnan indítja a folyamatos mérést.
+* **Életerő (HP %) Adaptív HSV Maszkolás:** A spectator nézet sötétebb zöld árnyalataihoz igazítva: H in [35, 95], S > 60, V > 30 (a korábbi túl szigorú V > 60 kizárta a 40-55 közötti értékeket).
+* **Fekete Osztásvonalak (Divider Ticks) Toleranciája:** A League of Legends HUD 100 és 1000 HP-s fekete osztásait egy 3 pixeles hézagtűréssel (`gap <= 3`) hidaltuk át.
+* **Erőforrás / Mana (%) Multimodális Maszkolás:**
+  - Hagyományos Mana (Kék): H in [90, 135], S > 60, V > 50.
+  - Energia (Sárga, pl. Akali, Kennen, Zed): H in [18, 38], S > 80, V > 70.
+  - Düh / Pajzs / Vér (Vörös/Narancs, pl. Yone szélvédő, Renekton, Rumble): H in [0, 15] vagy [165, 180], S > 90, V > 90.
+  - Manátlan hősök üres sávja automatikusan 0.0%-ot ad.
+* **Halálállapot (Respawn Timer):** Ha egy játékos halott, a sávja üres marad, így a detektált érték azonnal 0.0%.
+
+#### 4. Teljesítmény és CSV Kimenet
+* **Futásidő:** A 10 játékos teljes HP és Mana állapotának kinyerése közvetlen tömbműveletekkel < 0.15 ms képkockánként, elhanyagolható számítási költséget jelentve.
+* **CSV Séma Bővítés:** A telemetriai adatbázis 20 új numerikus oszloppal egészült ki:
+  - `blue_{role}_hp_pct`, `blue_{role}_mana_pct` (10 oszlop)
+  - `red_{role}_hp_pct`, `red_{role}_mana_pct` (10 oszlop)
+---
+
+### 10.18. Interaktív Vizuális Audit és Idősávos Diagnosztikai Ellenőrző (Diagnostic Player & Model Explainability)
+
+#### 1. Rendszerkövetelmény és Szakmai Indoklás (Explainable AI / Visual Audit)
+A közvetítésekből és meccsvisszajátszásokból származó gépi látási adatok (pozíciók, életerő, tárgyak) statisztikai kiértékelésén túl alapvető mérnöki és felhasználói követelmény a detektálások vizuális ellenőrizhetősége (Visual Explainability / Auditability).
+1. **Bizalom és Transzparencia:** Az esport elemzők és edzők nem fogadnak el kritika nélkül egy "fekete dobozként" előálló CSV táblázatot; látniuk kell, hogy a modell egy-egy kritikus pillanatban (pl. sárkányharc, rajtaütés) milyen képi bizonyítékok alapján határozta meg a játékosok állapotát.
+2. **Hibakeresés (Edge-case Debugging):** Ha a telemetriában hirtelen ugrás tapasztalható, a felhasználónak lehetősége van azonnal ráugrani az adott időpontra, és ellenőrizni a valós képet.
+3. **Deployment Készültség (Webapp Scrubber):** A későbbi felhő- vagy webes alkalmazás (Streamlit / React / Gradio) központi felhasználói felületeként szolgál, ahol a feltöltött mérkőzésvideók egy interaktív csúszkával tetszőlegesen bejárhatók.
+
+#### 2. Képszintű és Idősávos Architektúra (`inspect_at_timestamp`)
+A `CompleteBroadcastPipeline` osztályba beépítettük az `inspect_at_timestamp(video_path, timestamp_sec)` motort:
+* **Determinisztikus Képkocka-Pozicionálás:** Közvetlenül a megadott t másodperchez tartozó videó képkockát olvassa be a frame_idx = round(t * FPS) képlet alapján a cv2.VideoCapture segítségével.
+* **Valós Idejű Multimodális Kiértékelés:** A kiválasztott képkockán azonnal lefut a `process_frame()`, amely egyesíti:
+  - A képernyős bajnok detektálásokat (Screen HP-bar YOLO bboxes)
+  - A minimap 1-to-1 champion Re-ID-t és 2D radarkoordináta fúziót
+  - A kétoldali HUD életerő (HP%) és erőforrás (Mana%) sávok pásztázását
+  - A bajnok szintek és idézői képességek kinyerését
+  - A felső HUD meccsidő és statisztika OCR-jét.
+
+#### 3. Négypaneles Diagnosztikai Irányítópult (`visualize_telemetry_report`)
+A kiértékelés eredményét egy 24x12 hüvelykes, 150 DPI-s sötét témájú (#0d1117) műszerfalon jeleníti meg:
+1. **Fő Játéknézet (Live Match View & Screen Detections):**
+   * Az eredeti 1080p játékkép, rajta a kameranézet (viewport) keretével.
+   * A játéktéren harcoló bajnokok határolókeretei (aranykék Kék csapatnak, korallvörös Piros csapatnak), a felismert bajnoknévvel/szerepkörrel felcímkézve.
+2. **2D Térképi Radar (Summoner's Rift World Radar):**
+   * A 14820x14820-as hivatalos Riot koordinátarendszerbe transzformált valós idejű játékospozíciók és Re-ID azonosítók.
+3. **Minimap & Kamera Vágat:**
+   * A minimap aktuális kivágása és az aktív észlelési státusz (STATUS_1_MINIMAP vagy STATUS_2_SCREEN_FALLBACK).
+4. **Teljes Roster Telemetriai Táblázat:**
+   * Mind a 10 játékosra összesíti a legfrissebb állapotot:
+     - Csapat & Szerepkör (Team, Role)
+     - Bajnok neve (Champion)
+     - Életerő százalék (HP %)
+     - Erőforrás százalék (Mana %)
+     - Bajnok szintje (Lvl 1..18)
+     - Idézői képességek (D/F Spells)
+     - Világkoordináták (X, Y)
+     - Trinket és 6 tárgyhely (Inventory Items).
+
+#### 4. Interaktív Jupyter Widget Felület (Section 15.1)
+A notebook 43. és 44. cellájában (ipywidgets) megvalósítottuk a felhasználóbarát interaktív felületet:
+* **Mérkőzésválasztó legördülő menü (Dropdown):** Automatikusan listázza a munkakönyvtárban elérhető mérkőzésklipeket és közvetítéseket.
+* **Interaktív Időcsúszka (FloatSlider):** 0.5 s-es finom lépésközzel állítható idősáv.
+* **Azonnali renderelés:** A csúszka mozgatására a Jupyter kimenetben valós időben frissül a 4-paneles audit dashboard (`Plots/interactive_inspector_preview.png`).
+
+
+### 10.19. Idézői Képességek (Summoner Spells) Felismerése és a Flash/Teleport Fallback Hiba Elhárítása
+
+#### 1. A Probléma Gyökéroka és Hibaanalízise
+A tesztelés során felmerült kritikus észrevétel: *"A summoner spelleknél is mindenkinek flash / teleportot lát. Mi lehet a probléma?"*
+A mélyreható kódvizsgálat és futási audit során két alapvető problémát azonosítottunk:
+1. **Classic Spectator HUD Ág Implementálatlansága:** A `CompleteBroadcastPipeline.extract_spells_and_status` függvényben az idézői képességek template matching kiértékelése kizárólag az LCK közvetítési felületre (`hud_mode == 'lck'`) volt megvalósítva. A klasszikus nézői felületnél (`hud_mode == 'classic'`) a kód közvetlenül a `self.cached_spells` gyorsítótárból próbált olvasni, amely azonban a Classic HUD alatt a mérkőzés kezdeti probe frame-jein soha nem került kitöltésre (értéke `'Unknown'` maradt). Ennek következtében a statikus biztonsági fallback futott le minden egyes játékosra:
+   ```python
+   'spell1': cached if cached != 'Unknown' else 'Flash'
+   'spell2': cached if cached != 'Unknown' else 'Teleport'
+   ```
+   Így mind a 10 játékos permanensen Flash / Teleport értékeket kapott.
+2. **Katalógus Szennyezettség (Non-Standard Spells):** A `Spells/` könyvtár 34 darab PNG fájlt tartalmazott, amelyek között ARAM (Snowball, Clarity), URF, Aréna (CherryHold, CherryFlash) és speciális játékmód placeholder fájlok (`SummonerFortify_Jade.png`, `SummonerBarrier_Jade.png`) is szerepeltek. Ezek a nem standard képek torzították a template matching hasonlósági függvényét, hamis pozitív detektálásokat okozva.
+
+#### 2. Standard Summoner's Rift Varázslatkészlet Szűrése
+A `_load_spells` metódusban szigorú fehérlistát (`VALID_SPELL_MAP`) vezettünk be, amely kizárólag a hivatalos Summoner's Rift játéktér 9 standard idézői képességét tölti be a tudásbázisba:
+- **Flash** (`SummonerFlash.png`)
+- **Teleport** (`SummonerTeleport.png`)
+- **Smite** (`SummonerSmite.png`)
+- **Ignite** (`SummonerDot.png`)
+- **Cleanse** (`SummonerBoost.png`)
+- **Ghost** (`SummonerHaste.png`)
+- **Heal** (`SummonerHeal.png`)
+- **Exhaust** (`SummonerExhaust.png`)
+- **Barrier** (`SummonerBarrier.png`)
+
+Minden sablonképről a betöltés során egy 2 pixeles külső keretet levágunk (`inner = im[2:h-2, 2:w-2]`), így a sablon kizárólag a varázslat tényleges szimbólumát tartalmazza a fekete/arany keretpixelek nélkül.
+
+#### 3. Classic Spectator HUD Idézői Képesség Slot Geometria
+A klasszikus nézői felületen az idézői képességek a hősportrék mellett helyezkednek el függőlegesen egymás alatt (két 18x18 pixeles négyzet):
+* **Kék oldal (bal oszlop):**
+  - Vízszintes tartomány: $x \in [5, 23]$ (közvetlenül a portré bal oldalán).
+  - Felső képesség (Spell 1 / D): $y \in [y_{base} + 12, y_{base} + 30]$
+  - Alsó képesség (Spell 2 / F): $y \in [y_{base} + 33, y_{base} + 51]$
+* **Piros oldal (jobb oszlop):**
+  - Vízszintes tartomány: $x \in [1897, 1915]$ (a portré jobb oldalán).
+  - Felső képesség (Spell 1 / D): $y \in [y_{base} + 12, y_{base} + 30]$
+  - Alsó képesség (Spell 2 / F): $y \in [y_{base} + 33, y_{base} + 51]$
+ahol a játékoskártya horgonypontja: $y_{base} = 147 + i \cdot 103$ ($i = 0, 1, 2, 3, 4$ a TOP, JGL, MID, ADC, SUPPORT szerepkörökhöz).
+
+#### 4. Kétrétegű Hibrid Hasonlósági Mérőszám (Normalizált Keresztkorreláció + Színhisztogram)
+A `match_spell(crop)` metódus egyesíti a strukturális alakhasonlóságot és a színeloszlást:
+1. **Keretlevágás és Átméretezés:** A levágott 18x18-as képkivágásról 1 pixeles külső peremet levágunk, majd 22x22 pixelre méretezzük (`cv2.INTER_AREA`).
+2. **Normalizált Keresztkorreláció ($TM$):** Szürkeárnyalatos sablonillesztés (`cv2.TM_CCOEFF_NORMED`) az alakzat (villám, láng, pajzs) felismerésére.
+3. **HSV Színhisztogram Korreláció ($H_{corr}$):** 16x16-os normalizált $H-S$ hisztogram korreláció (`cv2.HISTCMP_CORREL`) az élénk színek megkülönböztetésére.
+4. **Fúziós Pontszám:**
+   $$Score = 0.5 \cdot TM + 0.5 \cdot H_{corr}$$
+   A döntési küszöbérték $Score > 0.20$.
+
+#### 5. Kezdeti Probe Frame Caching és Teljesítmény
+A `resolve_clip_roster_and_templates` metódus a mérkőzés kezdetén mintavételezett probe frame-eken (1.0s, 3.0s, 5.0s) automatikusan lefutatja az `extract_spells_and_status` metódust. A detektált képességek bekerülnek a `self.cached_spells` memóriatárolóba, így a későbbiekben a képesség-töltési idő (cooldown szürkülés vagy visszaszámláló overlay) esetén is a helyes alapképességek maradnak érvényben a teljes meccstelemetriában és a CSV exportban.
+
+
+---
+
+### 10.20. Hősszintek (Level 1..18) Robusztus Optikai Karakterfelismerése (OCR) és a Szint-Elakadás Hiba Elhárítása
+
+#### 1. A Probléma Gyökéroka és Hibaanalízise
+A pipeline tesztelése során tapasztalt kritikus hiba: *"Szinteknél mindenki level 1 mindkét HUD módnál. Classic modeban a HP és Mana barok még mindig rossz értékeket mutatnak."*
+A mélyreható mérnöki diagnosztika során a következő kiváltó okokat tártuk fel:
+1. **Classic Spectator HUD Ág Hívási Hiánya:** A `CompleteBroadcastPipeline.extract_spells_and_status` metódus klasszikus nézői felületre vonatkozó ágában az `extract_level_ocr` függvény egyszerűen nem volt meghívva. A kód kizárólag a statikusan inicializált `self.cached_levels['blue'][r]` és `self.cached_levels['red'][r]` értékeket adta vissza, amelyek a meccs teljes ideje alatt permanensen 1-es értéken ragadtak.
+2. **LCK Broadcast HUD Geometriai Eltolódás:** A korábbi LCK szint-kivágási koordináták ($[y+32:y+50, 65:85]$ Kéken és $[y+32:y+50, 1805:1825]$ Piroson) el voltak csúszva. A Kék oldalon a szám alja csonkolódott, míg a Piros oldalon a badge helyett a portré bal szélének üres hátterét mintavételezte a rendszer (a tényleges badge a portré jobb alsó sarkában, $x \in [1836, 1856]$-nál található).
+3. **Tesseract Szegmentációs Korlát és Aranykeret-Fúzió:** A hősportrék sarkában lévő szintjelző egy kisméretű, 18x18 pixeles kör alakú badge, amelyet egy fényes arany perem ölel körül. Ha a teljes 18x18-as mezőt dolgozzuk fel, alacsonyabb küszöbértékeknél (130-170) az aranykeret felső és jobb oldali íve összeolvad a fehér számjeggyel. Ennek hatására a Tesseract a függőleges szárszálas 1-es számjegyet a felső vízszintes ívvel kombinálva tévesen 4-esnek vagy 7-esnek olvasta.
+
+#### 2. Finomhangolt Geometria és Belső Cella (Inner Badge) Kivágás
+A külső aranykeret parazita képpontjainak kizárására egy precíziós belső kivágási ablakot vezettünk be:
+* **Classic Spectator HUD (14x14 px belső maszk):**
+  - **Kék oldal:** $x \in [31, 45]$, $y \in [y_{base} + 40, y_{base} + 54]$ (a portré bal alsó sarkában).
+  - **Piros oldal:** $x \in [1875, 1889]$, $y \in [y_{base} + 40, y_{base} + 54]$ (a portré jobb alsó sarkában).
+  - Ahol $y_{base} = 147 + i \cdot 103$ ($i = 0, 1, 2, 3, 4$).
+* **LCK Broadcast HUD (20x22 px horgonypont):**
+  - **Kék oldal:** $x \in [62, 82]$, $y \in [y + 34, y + 56]$.
+  - **Piros oldal:** $x \in [1836, 1856]$, $y \in [y + 34, y + 56]$.
+
+#### 3. Nagykontrasztú Érzékenységi Pásztázás (High-Contrast Sweep) és Quiet Zone Margó
+A kisméretű számjegyek megbízható felismeréséhez a Tesseract OCR motor optimális környezetet igényel:
+1. **5x Bikubikus Felnagyítás:** Az $up = cv2.resize(gray, (0, 0), fx=5.0, fy=5.0, cv2.INTER_CUBIC)$ lépés sima, jól kivehető karaktervonalakat eredményez.
+2. **Magas Küszöbérték Pásztázás:** A sötét háttérből a tiszta fehér számjegy (intenzitás > 210) izolálására egy fentről lefelé haladó küszöb-pásztázást alkalmazunk:
+   $$\tau \in [205, 195, 185, 175, 160]$$
+   Ez azonnal elkülöníti a számjegyet az enyhén világító (160-180 közötti) háttérelemektől.
+3. **20 pixeles Quiet Zone Keret:** A `cv2.copyMakeBorder(th_b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=0)` tiszta fekete margót helyez a karakter köré. Ez megakadályozza, hogy a Tesseract peremhibát (edge cutoff) észleljen a `--psm 10` (egyetlen karakter) és `--psm 7` (egyetlen szövegsor) módokban.
+
+#### 4. Kauzális Szűrő és Tetszőleges Időpontra Ugrás (Arbitrary Seek Support)
+Annak érdekében, hogy a telemetriai pipeline mind folytonos meccsfeldolgozáskor, mind az interaktív sliderrel történő tetszőleges idősávra ugráskor (pl. a meccs 15. percére tekerve) azonnal helyes szintet mutasson:
+```python
+if last_lvl == 1:
+    if 1 <= val <= 18:
+        self.cached_levels[team][role] = val
+        return val
+else:
+    # Folytonos követés: a szint nem csökkenhet, és lépésenként legfeljebb 3-at nőhet
+    if last_lvl <= val <= min(18, last_lvl + 3):
+        self.cached_levels[team][role] = val
+        return val
+```
+Ha a játékos éppen elpusztult (HP = 0.0%, szürke respawn timer takarja a portrét), az OCR nem észlel számot, így a rendszer determinisztikusan megőrzi az elhalálozás előtti legutolsó érvényes szintet.
+
+#### 5. Empirikus Ellenőrzés és Eredmények
+A kalibrált algoritmust több reprezentatív tesztfelvételen validáltuk:
+* **`Classic_clips/clip_001.mp4` (Mérkőzés kezdete, $t = 00:32$):**
+  - HP: Mind a 10 játékos pontosan **100.0%**.
+  - Mana: 89.1% - 97.8% (manátlan hősöknél 0.0%).
+  - Hősszintek: Mind a 10 játékos megbízhatóan **Level 1** (10/10 pontosság).
+* **`Classic_clips/clip_010.mp4` (Középjáték):**
+  - HP: Dinamikus harci értékek (Kék Top: 76.1%, Jungle: 84.8%, Support sérülés: 4.3%).
+  - Hősszintek: Valós fejlődési szintek:
+    - Kék csapat: Top: 6, Jungle: 5, Mid: 5, ADC: 4, Support: 4.
+    - Piros csapat: Top: 5, Jungle: 5, Mid: 3, ADC: 2, Support: 4.

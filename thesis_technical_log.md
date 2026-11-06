@@ -1009,3 +1009,185 @@ A kalibrált algoritmust több reprezentatív tesztfelvételen validáltuk:
   - Hősszintek: Valós fejlődési szintek:
     - Kék csapat: Top: 6, Jungle: 5, Mid: 5, ADC: 4, Support: 4.
     - Piros csapat: Top: 5, Jungle: 5, Mid: 3, ADC: 2, Support: 4.
+
+
+---
+
+### 10.21. Oldalsó HUD Telemetriai Építőkockák (HP, Mana, Szint és Idézői Képességek) Moduláris Különválasztása és Önálló Vizuális Tesztelhetősége (Sections 3.2 & 3.3)
+
+#### 1. Mérnöki Motiváció és Építőkocka-Elv (Building-Block Architecture)
+A 10.10. fejezetben bevezetett moduláris kutatási architektúrának megfelelően a teljes közvetítési pipeline (`CompleteBroadcastPipeline` – Section 15) minden részkomponensének önállóan is vizsgálhatónak, paraméterezhetőnek és vizuálisan auditálhatónak kell lennie még a végső integráció előtt. Miután a pipeline-ba bekerült az idézői képességek (`spell1`, `spell2`), a bajnokszintek (`level`), valamint az életerő (`hp_pct`) és erőforrás/mana (`mana_pct`) csíkok valós idejű kinyerése, ezeket a detektorokat különálló, önállóan futtatható építőkocka-fejezetekbe (**Section 3.2** és **Section 3.3**) emeltük ki közvetlenül a hősportré-felismerés (**Section 3.1**) után.
+
+#### 2. Section 3.2 – Idézői Képességek Felismerő Építőkocka (`load_spell_database`, `match_spell_icon`)
+* **Globális Tudásbázis (`spell_db`):** A `load_spell_database('Spells')` függvény a `VALID_SPELL_MAP` fehérlista alapján betölti a 9 kompetitív Summoner's Rift idézői képességet (`Flash`, `Teleport`, `Smite`, `Ignite`, `Cleanse`, `Ghost`, `Heal`, `Exhaust`, `Barrier`), levágja a 2 pixeles külső sablonkeretet, majd $22 \times 22$ pixelre normalizálja a BGR, szürkeárnyalatos és 2D HSV hisztogram ($16 \times 16$ bin) reprezentációkat.
+* **Hibrid Illesztő Függvény (`match_spell_icon`):** A HUD-ról kivágott képesség-slotokról 1 pixeles peremet eltávolítva kombinált pontszámot számol:
+  $$\text{Score} = 0.5 \cdot \text{TM\_CCOEFF\_NORMED} + 0.5 \cdot \text{HISTCMP\_CORREL}$$
+* **Önálló Vizuális Teszt (`Standalone Cell Test`):** A cella végén található diagnosztikai blokk egy reprezentatív mérkőzés-képkockán automatikusan felismeri a HUD típust (`LCK` vagy `Classic`), kivágja mind a 10 játékos `D` és `F` idézői képesség ikonját, és egy $2 \times 5$-ös Matplotlib tablóban egymás mellett megjeleníti az eredeti HUD kivágásokat a felismert varázslatnévvel és konfidencia-értékkel.
+
+#### 3. Section 3.3 – Játékos Státusz Építőkockák: Bajnokszint OCR és Kétirányú HSV HP/Mana Sáv-Mérés
+* **Bajnokszint Badge OCR (`extract_level_badge_ocr`):**
+  - Önállóan meghívható függvény, amely $5\times$-ös bikubikus felnagyítást (`cv2.INTER_CUBIC`), többlépcsős binarizálási küszöb-pásztázást ($\tau \in [205, 195, 185, 175, 160]$), 20 pixeles fekete Quiet Zone keretet és Tesseract `--psm 10` / `--psm 7` számjegy-szűrést alkalmaz.
+  - Opcionális `return_debug_mask=True` paraméterrel visszaadja a binarizált OCR maszkot is a küszöbölés vizuális ellenőrzéséhez.
+* **Kétirányú HSV Életerő és Erőforrás Százalékmérés (`measure_bar_pct`):**
+  - `color='hp'` módban a zöld életerő-tartományt ($H \in [35, 95], S > 60, V > 30$), míg `color='resource'` módban a multimodális erőforrás-tartományokat (Kék Mana: $H \in [90, 135]$, Sárga Energia: $H \in [18, 38]$, Vörös Düh/Fury: $H \le 15 \lor H \ge 165$) szegmentálja.
+  - Kezeli a balról jobbra (`fill_dir='ltr'`) és a Classic HUD piros oldalán alkalmazott tükrözött, jobbról balra (`fill_dir='rtl'`) töltődő sávokat, átugorva a lekerekített sötét HUD keretet (első 5 pixel) és áthidalva a legfeljebb 2 pixeles osztóvonalakat (`gap <= 2`).
+* **Kombinált Státusz-Kinyerő és Vizuális Diagnosztika (`extract_spells_and_status_standalone`):**
+  - Egyetlen hívással visszaadja mind a 10 játékos `spell1`, `spell2`, `level`, `hp_pct` és `mana_pct` értékeit, valamint a `_crops` kulcs alatt a nyers kivágásokat (`badge`, `lvl_mask`, `hp_strip`, `mana_strip`).
+  - A cella beépített tesztje áttekintő Pandas táblázatot nyomtat a 10 játékos összesített harci állapotáról, majd egy $2 \times 5$-ös diagnosztikai ábrán kirajzolja minden játékos felnagyított szint-badge kivágását, valamint a felette és alatta elhelyezkedő nyers HP és Mana/Resource pixelcsíkokat a mért százalékokkal.
+
+#### 4. Memóriamegosztás a Section 15 Integrált Pipeline-nal
+A `CompleteBroadcastPipeline.__init__` konstruktor (Section 15) kiegészült a `spell_db` globális tudásbázis ellenőrzésével: ha a felhasználó már lefuttatta a Section 3.2 építőkockát, a pipeline újrahasznosítja a memóriában lévő `spell_db` szótárat (`[Pipeline Init] Reusing precomputed summoner spell knowledge base from Section 3.2 (9 spells)...`), elkerülve a redundáns lemezműveleteket.
+
+
+---
+
+### 10.22. LCK Broadcast HUD Idézői Képesség (Summoner Spell) és Szint-Badge Geometriai Elcsúszásának Kalibrálása, valamint Cooldown-Invariáns Többlépcsős Felismerése
+
+#### 1. A Probléma Gyökéroka és Mérnöki Diagnosztika
+Az önálló építőkocka-cellák (**Section 3.2** és **Section 3.3**) `CVAT_Clips/clip_030.mp4` (LCK közvetítés) felvételen történő tesztelése során a felhasználó jelezte: *"A summoner spell felismerés LCK modeban el van csúszva. Javítsd ki."*
+A hibaanalízis és pixelprofil-mérés négy egymásra épülő kiváltó okot tárt fel:
+
+1. **Hibás HUD-Detektor Függvényhívás (`detect_hud_layout` vs. `detect_hud_mode`):**
+   - A Section 3.2 és Section 3.3 tesztcellákban a HUD típusának meghatározása a `detect_hud_layout(frame)` névre hivatkozott (`if 'detect_hud_layout' in globals() else 'classic'`), miközben a Section 2.1-ben definiált függvény tényleges neve **`detect_hud_mode`**.
+   - Emiatt az LCK videókon (`CVAT_Clips/clip_030.mp4`) a feltétel mindig hamis ágra futott, és a rendszer `'classic'` módban ($x \in [5, 23]$ és $x \in [1897, 1915]$, $y_b = 147 + i \cdot 103$) vágta ki a képkockát az LCK koordináták helyett.
+2. **Nem-Egyenletes Függőleges Kártya-Lépésközből Adódó Kumulatív Elcsúszás (`ys` Drift):**
+   - Az LCK ágban korábban használt `ys = [140, 255, 370, 470, 585]` lista szabálytalan lépésközöket ($+115, +115, +100, +115$ px) tartalmazott.
+   - A `CVAT_Clips/clip_030.mp4` oldalsó sávjainak horizontális gradiens- és fényerőprofil-elemzése (`calibrate_lck_spells.py`) bebizonyította, hogy az LCK játékoskártyák szigorúan egyenletes, **107 pixeles** függőleges periódussal követik egymást:
+     $$y_i = 140 + i \cdot 107 \quad \Longrightarrow \quad ys = [140, 247, 354, 461, 568]$$
+   - A korábbi $[140, 255, 370, 470, 585]$ koordináták a Mid ($370$ vs. $354$) és Support ($585$ vs. $568$) szerepköröknél **16–17 pixeles lefelé történő elcsúszást** okoztak, így a `Spell 1 (D)` kivágása a `Spell 2 (F)` közepébe, a `Spell 2 (F)` kivágása pedig a kártya alatti életerő/mana csíkba csúszott bele.
+3. **Pontatlan Varázslat-Slot Méret ($22 \times 22$ px helyett $27 \times 27$ px) és Horizontális Perem-Becsúszás:**
+   - Az LCK közvetítési HUD-on az idézői képesség ikonok tényleges belső mérete **$27 \times 27$ pixel**:
+     - **Függőleges határok (kártya $y$ horgonyhoz képest):**
+       - `Spell 1 (D)`: $[y + 3, y + 30]$ ($27\text{ px}$; a korábbi $[y + 8, y + 30]$ levágta az ikon felső 5 pixelét).
+       - Sötét elválasztó sáv: $[y + 30, y + 33]$ ($3\text{ px}$).
+       - `Spell 2 (F)`: $[y + 33, y + 60]$ ($27\text{ px}$; a korábbi $[y + 32, y + 54]$ levágta az ikon alsó 6 pixelét).
+     - **Vízszintes határok:**
+       - **Kék oldal (bal):** $x \in [34, 61]$ ($27\text{ px}$; a korábbi $[38, 60]$ 4 pixellel jobbra csúszott).
+       - **Piros oldal (jobb):** $x \in [1858, 1885]$ ($27\text{ px}$; a korábbi $[1858, 1880]$ levágta a jobb oldali 5 pixelt).
+4. **Elavult `SummonerHeal.png` Sablon és Továbbfejlesztett (Unleashed) Smite / Cooldown Kezelés Hiánya:**
+   - A `Spells/SummonerHeal.png` fájl a régi (Season 1/2 Jade sisakos katona) ikont tartalmazta a modern zöld gömböt tartó kezek helyett, ezért a `Heal` varázslatot a rendszer következetesen félreosztályozta. A `Spells/SummonerHeal.png` fájlt frissítettük a modern, nagyfelbontású ($64 \times 64$) Heal sablonra.
+   - Közép- és végjátékban (pl. `clip_030.mp4`) a dzsungelesek alap Smite képessége átalakul **Kék (Gustwalker)** vagy **Piros (Scorchclaw) Unleashed Smite**-tá, továbbá a töltési időn (cooldown) lévő varázslatokon egy fehér, óramutató-szerű radiális vonal és félszektoros elsötétítés jelenik meg.
+
+#### 2. Kalibrált LCK Oldalsó HUD Geometria (Portré, Varázslatok és Szint-Badge)
+A Section 3.1, Section 3.2, Section 3.3 és Section 15 (`CompleteBroadcastPipeline`) modulokban egységesítettük a 107 pixeles periódusú LCK koordinátákat:
+
+| Komponens | Kék oldal ($x$, $y$) | Piros oldal ($x$, $y$) | Méret ($W \times H$) |
+| :--- | :--- | :--- | :--- |
+| **Kártya horgony ($y \in ys$)** | $[140, 247, 354, 461, 568]$ | $[140, 247, 354, 461, 568]$ | $\Delta y = 107\text{ px}$ |
+| **Hősportré (`PORTRAIT_COORDS`)** | $x \in [66, 120], y \in [y, y+56]$ | $x \in [1800, 1854], y \in [y, y+56]$ | $54 \times 56\text{ px}$ |
+| **Spell 1 (`D` slot)** | $x \in [34, 61], y \in [y+3, y+30]$ | $x \in [1858, 1885], y \in [y+3, y+30]$ | $27 \times 27\text{ px}$ |
+| **Spell 2 (`F` slot)** | $x \in [34, 61], y \in [y+33, y+60]$ | $x \in [1858, 1885], y \in [y+33, y+60]$ | $27 \times 27\text{ px}$ |
+| **Hősszint Badge (`badge`)** | $x \in [67, 91], y \in [y+41, y+57]$ | $x \in [1830, 1853], y \in [y+39, y+55]$ | $24 \times 16\text{ px}$ / $23 \times 16\text{ px}$ |
+
+A hősszint OCR-ben (`extract_level_badge_ocr` és `extract_level_ocr`) a Tesseract kiértékelési sorrendjét `for psm in [7, 10]:`-re módosítottuk, hogy a kétszámjegyű szinteket ($10..18$) a `--psm 7` (egyetlen sor) mód teljes egészében olvassa ki, mielőtt az egykarakteres `--psm 10` fallback lefutna.
+
+#### 3. Cooldown-Invariáns, Többlépcsős (Multi-Scale) Varázslat-Illesztő Algoritmus
+A `load_spell_database` / `match_spell_icon` (Section 3.2) és `_load_spells` / `match_spell` (Section 15) függvényeket az alábbi jelfeldolgozási lépésekkel bővítettük:
+1. **Fehér Cooldown-Mutató Inpainting (`remove_cooldown_sweep`):** A töltési időt jelző telítetlen, nagy fényerejű fehér óramutató-vonalat ($S < 45 \land V > 180$, ha a képpontok $0.5\% - 22\%$-át fedi) Telea-féle fast marching inpaintinggel (`cv2.inpaint(..., cv2.INPAINT_TELEA)`) eltávolítjuk, így az nem hoz létre hamis élgradienst.
+2. **Lokális Megvilágítás-Kiegyenlítés (`normalize_cooldown_lighting`):** A részlegesen elsötétített cooldown-szektorok fényerejét Gauss-burkológörbével ($9 \times 9$, $\sigma = 3.0$) kiegyenlítjük:
+   $$V_{eq} = 0.45 \cdot V + 0.55 \cdot \text{clip}\left(\frac{V}{G_{\sigma}(V) + 20} \cdot 135, 0, 255\right)$$
+3. **Unleashed Smite Színváltozatok és Multi-Scale Csúszóablak:** A `Smite` sablonból automatikusan előállítjuk a Kék ($\Delta H = +85^\circ$) és Piros ($\Delta H = +155^\circ$) Unleashed Smite variánsokat, majd minden sablont 5 léptékben ($s \in \{20, 22, 24, 26, 28\}$) tárolunk. A HUD-ról kivágott ikon $24 \times 24$-re normált középső $16 \times 16$-os magját (`c_raw` és `c_eq`) csúszóablakos BGR + Grayscale keresztkorrelációval ($TM$), $18 \times 8$-as HSV hisztogram-korrelációval ($H_{corr}$) és térbeli telítettség-hasonlósággal ($S_{sim} = 1 - \frac{1}{255}\overline{|S_p - S_c|}$) vetjük össze:
+   $$\text{Score} = w \cdot \left(0.60 \cdot TM + 0.30 \cdot H_{corr} + 0.10 \cdot S_{sim}\right)$$
+
+#### 4. Validációs Eredmények
+A kalibrált detektorokat több LCK és Classic mérkőzésklipen teszteltük:
+* **`CVAT_Clips/clip_001.mp4` (LCK korai játék):** **20 / 20 (100%)** helyes idézői képesség felismerés.
+* **`CVAT_Clips/clip_030.mp4` (LCK középjáték, aktív cooldownokkal, Blue/Red Unleashed Smite-tal és Unsealed Spellbook cserével):**
+  - **Idézői képességek:** **20 / 20 (100%)** pontos találat (beleértve a cooldownon lévő `Teleport` / `Flash` / `Ghost` ikonokat, a Kék és Piros `Unleashed Smite`-ot, az `Exhaust`-ot és a `Heal`-t).
+  - **Hősszintek (Level OCR):** **10 / 10 (100%)** pontos találat (Kék: `11, 10, 11, 10, 7`; Piros: `12, 10, 11, 10, 8`).
+* **`Classic_clips/clip_001.mp4` (Classic HUD):** **10 / 10 (100%)** pontos Level 1 OCR és pontos varázslat-azonosítás.
+
+---
+
+### 10.23. Classic HUD Hősszint `8 -> 3` OCR Konfúzió Topológiai Feloldása és az LCK Mana Sáv `100%`-os Szaturációs Hiba Kiküszöbölése
+
+#### 1. A Problémák Gyökéroka és Képpontszintű Diagnosztikája
+Az önálló építőkocka-cellák (Section 3.3) és a teljes pipeline (Section 15) tesztelése során a felhasználó két specifikus jelenséget jelzett:
+1. *"Classicban a 8-ast 3-asnak látja, a számoknál."*
+2. *"LCK-ben a mana bar gyakran 100%-ot lát, még akkor is amikor nagyon nem annyi."*
+
+A képpontszintű mátrix- és HSV-profil-elemzés (`print_lvl8_matrix.py`, `inspect_lck_bars.py`) pontosan feltárta mindkét hiba fizikai kiváltó okát:
+
+##### A. Miért olvasta a Tesseract a Classic HUD `8`-as szintjét `3`-asnak (vagy `5`-ösnek)?
+1. **Magas Kezdeti Binarizálási Küszöb ($\tau = 205$) Általi Él-Erózió:**
+   - A Classic Spectator HUD-on az egyjegyű szintszámok egy $10 \times 6$ pixeles rácson jelennek meg közvetlenül a félig áttetsző hősportré sötét sarka felett.
+   - Az anti-aliasing miatt a `8`-as számjegy bal felső (`UL`, $r \in [1, 3], c \in [0, 1]$) és bal alsó (`LL`, $r \in [6, 8], c \in [0, 1]$) függőleges íveinek intenzitása gyakran $187..204$ közé esik, míg a jobb oldali ívek elérik a $205..225$-öt.
+   - Amikor a küszöb-pásztázás $\tau = 205$-ről indult, a `8`-as számjegy bal oldali függőleges fala 1–2 pixelen megszakadt (kinullázódott), így a bináris maszkon a két zárt hurok balról kinyílt, és topológiailag `3`-assá (vagy `5`-össé) alakult, amelyet a Tesseract már az első iterációban elfogadott.
+2. **Színes Portré-Háttér Bevilágítása a Szürkeárnyalatos Csatornába:**
+   - A `cv2.cvtColor(..., cv2.COLOR_BGR2GRAY)` súlyozás ($0.299 R + 0.587 G + 0.114 B$) a világos sárga/narancs/lila portré-részleteket (pl. Rell, Leona, Tristana haja a számjegy bal oldalán) magas szürkeértékkel ($150..190$) képezte le, ami torzította a karakter kontúrját.
+3. **Keskeny Vízszintes Kivágás ($14\text{ px}$) Kétszámjegyű és Jobbra Igazított Szinteknél:**
+   - A $[31, 45]$ és $[1875, 1889]$ tartományok levágták a kétszámjegyű (`10..12`) szintek vagy a jobbra eső piros oldali `8`-as (`clip_030` Red Support) szélső oszlopát. A kivágást **$16\text{ px}$ szélességre** ($x \in [29, 45]$ Kék oldalon és $x \in [1875, 1891]$ Piros oldalon) bővítettük, miközben az alsó fekete keretsorokat ($r \ge 11$) maszkoljuk.
+
+##### B. Miért mért az LCK Mana Sáv Gyakran Hamis `100.0%`-ot?
+1. **Az LCK Játékoskártya Világító Kék Alsó Keretvonalának (`dy = +10`) Becsúszása a `mana_strip` Kivágásba:**
+   - Az egyenletes $107\text{ px}$-es kártyaperiódussal (`y_hps = [210, 317, 424, 531, 638]`) a tényleges $4\text{ px}$ magas LCK mana sáv a **`[y_hp + 6 : y_hp + 10]`** ($\Delta y \in \{+6, +7, +8, +9\}$) sorokban fut.
+   - Közvetlenül alatta, a `dy = +10` (`y_hp + 10`) sorban húzódik az LCK játékoskártya **teljes szélességű ($115\text{ px}$), kékesen derengő alsó díszkerete**, amelynek HSV értékei a teljes sávon: $H \in [114, 125], S \in [120, 190], V \in [55, 98]$.
+   - Mivel a korábbi kód a `[y_hp + 7 : y_hp + 11]` tartományt vágta ki (amely tartalmazta a `dy = +10` keretsort!), és az oszlop-aktivitást `cols = mask.any(axis=0)` (egyetlen sor egyezése is elég) szabály szerint számolta $V > 50$ küszöbbel, a `dy = +10` keretsor **minden egyes oszlopban ($100.0\%$)** aktiválta a kék maszkot, függetlenül attól, hogy a felette lévő tényleges mana sáv mennyi manát tartalmazott!
+2. **Sötétkék Üres Mana-Medence (`V = 26..65`) vs. Aktív Mana (`V = 130..235`):**
+   - Az LCK közvetítési HUD-on a mana sáv üres (lemerült) háttere nem fekete, hanem mély sötétkék ($H \in [99, 125], S \in [115, 218], V \in [26, 65]$). A korábbi $V > 50$ küszöb az üres medence enyhén világosabb szakaszait is aktív manának érzékelte.
+3. **Classic HUD Piros Oldali Töltési Irány (`fill_dir='ltr'`):**
+   - A `Classic_clips/clip_010.mp4` kártyáinak vizuális ellenőrzése (`classic_cards_010.png`) igazolta, hogy a Classic Spectator HUD-on **mind a Kék, mind a Piros oldalon balról jobbra (`fill_dir='ltr'`)** töltődnek az életerő és erőforrás sávok; a korábbi `'rtl'` beállítás a piros oldalon sérült életerő/mana esetén az üres jobb szélről indította a keresést.
+
+#### 2. Implementált Algoritmikus Megoldások (Section 3.3 & Section 15)
+
+1. **Akromatikus Fehér Csatorna + $10 \times 6$ Karakter-Topológiai Diszambiguáció (`refine_single_digit_3_5_8`):**
+   - A színes portré-háttér elnyomására az akromatikus fehér csatornát ($W_{ch} = \min(B, G, R)$) $0.7 : 0.3$ arányban keverjük a szürkeárnyalatos képpel (`cv2.addWeighted(w_ch, 0.7, gray_raw, 0.3, 0)`), majd a küszöb-pásztázást `[195, 185, 175, 205, 160]` sorrendben futtatjuk, megőrizve a `8`-as számjegy bal oldali íveit.
+   - Minden egyjegyű (`span < 8` oszlop) Classic HUD találatnál a `refine_single_digit_3_5_8` megkeresi a $10 \times 6$ pixeles karakter-foglalatot, és kiszámítja a 4 kvadráns függőleges falszilárdságát (`UL`, `LL`, `UR`, `LR`), a középső vízszintes keresztgerendát (`MID`), valamint a felső és alsó hurok belső minimumát (`UH`, `LH`):
+     - **`8`-as számjegy:** Mind a 4 függőleges fal és a középső gerenda erős ($UL \ge 175, LL \ge 175, UR \ge 170, LR \ge 168, MID \ge 170$), miközben mindkét hurokbelső sötét ($UH < 90 \land LH < 90$).
+     - **`5`-ös számjegy:** Erős bal felső és jobb alsó ív ($UL \ge 185 \land LR \ge 180$), de nyitott jobb felső és bal alsó oldal ($UR < 165 \land LL < 175$).
+     - **`3`-as számjegy:** Nyitott bal felső oldal ($UL < 140$), miközben a jobb oldali ívek erősek ($UR \ge 155 \land LR \ge 170$).
+
+2. **Kalibrált LCK Sáv-Geometria, Magas Fényerejű ($V > 95$) Erőforrás-Maszk és Sor-Konszenzus (`measure_bar_pct`):**
+   - **Pontosított LCK függőleges sáv-koordináták (`y_hps = [210, 317, 424, 531, 638]`):**
+     - `hp_strip`: `frame[y_hp-1:y_hp+3, ...]` ($4\text{ px}$).
+     - `mana_strip`: `frame[y_hp+6:y_hp+10, ...]` ($4\text{ px}$, kizárva a `y_hp+10` kék kártyakeretet).
+   - **HSV Küszöbök és Többségi Sor-Konszenzus (`cols = (mask.mean(axis=0) >= 0.5)`):**
+     - Az erőforrás sávoknál (Kék Mana, Sárga Energia, Vörös Düh) a fényerő-küszöböt $V > 50$-ről **$V > 95$**-re emeltük, kiegészítve a fehér Flow/Pajzs maszkot (`S <= 35, V > 185`, pl. Yasuo), és előírtuk, hogy egy oszlop csak akkor minősüljön aktívnak, ha a sáv sorainak **legalább 50%-ában** teljesül a feltétel (`mask.mean(axis=0) >= 0.5`). Az életerő (`color='hp'`) szaturációs küszöbét $S > 45$-re finomítottuk az LCK bal széli lágy színátmenetének kezelésére.
+
+#### 3. Empirikus Validáció
+* **Classic HUD Hősszint OCR Teszt (`test_full_lvl_ocr.py` – 31 referencia eset az összes egy- és kétjegyű szintre, beleértve 13 db különböző `Level 8` jelvényt Kék és Piros oldalon):** **31 / 31 (100.0%)** hibátlan felismerés (egyetlen `8`-as sem olvasódik `3`-asnak vagy `5`-ösnek).
+* **LCK Broadcast HUD Mana & HP Validáció (`CVAT_Clips/clip_030.mp4`):**
+  - A korábban hamis `100.0%`-ot mutató részleges mana sávok most pontosan követik a valós töltöttséget:
+    - `BLUE TOP`: $100.0\% \longrightarrow \mathbf{88.5\%}$
+    - `BLUE JUNGLE`: $85.0\% \longrightarrow \mathbf{69.9\%}$
+    - `BLUE MID`: $47.8\% \longrightarrow \mathbf{42.5\%}$
+    - `BLUE BOT`: $37.2\% \longrightarrow \mathbf{30.1\%}$
+    - `RED JUNGLE`: $100.0\% \longrightarrow \mathbf{62.8\%}$
+    - `RED MID`: $100.0\% \longrightarrow \mathbf{76.1\%}$
+    - `RED BOT`: $72.6\% \longrightarrow \mathbf{46.0\%}$
+    - `RED SUPPORT`: $100.0\% \longrightarrow \mathbf{44.2\%}$ (és `RED TOP` HP: $0.0\% \longrightarrow \mathbf{100.0\%}$).
+
+### 10.24. Többvideós Interaktív Diagnosztikai Felület (Section 15.1), Videónkénti Kontextus-Gyorsítótárazás (`video_context_cache`) és Állapot-Izoláció
+
+A felhasználói igény arra irányult, hogy a **Section 15** (`CompleteBroadcastPipeline`) és a **Section 15.1** (`launch_interactive_inspector` interaktív Jupyter widget) képes legyen **eltérő HUD-módú és különböző mérkőzésekből származó klipek** – konkrétan a **`CVAT_Clips/clip_010.mp4`** (BFX Game 1, LCK Broadcast HUD, `clip_010`) és a **`Classic_clips/clip_019.mp4`** (Classic Spectator HUD, `clip_019`) – egyidejű kezelésére és a legördülő listából (`Dropdown`) történő azonnali váltogatására.
+
+#### 1. Feltárt Problémák
+1. **Könyvtárnév-eltérés a Legördülő Listában (`CVAT_Clips` vs. `CVAT_clips_BFX_Game1`):**
+   - A `launch_interactive_inspector` korábban a `'CVAT_clips_BFX_Game1/clip_010.mp4'` elérési utat kereste, miközben a munkakönyvtárban a BFX Game 1 LCK klipek a **`CVAT_Clips/`** mappában (`CVAT_Clips/clip_010.mp4`) találhatók. Az `os.path.exists` szűrés miatt így a 10-es LCK klip korábban nem jelent meg a widget legördülő menüjében.
+2. **Állapot-szivárgás (State Leakage) Különböző Videók Közötti Váltáskor:**
+   - A `CompleteBroadcastPipeline` példány szintű változókban tárolta a feloldott hősnévsort (`self.roster`), a HUD-módot (`self.hud_mode`), az idézői varázslatokat (`self.cached_spells`), a monoton növekvő hősszinteket (`self.cached_levels`) és a játékórát (`self.prev_time`).
+   - Amikor a felhasználó a widgetben egy másik videóra váltott (pl. `CVAT_Clips/clip_010.mp4` $\leftrightarrow$ `Classic_clips/clip_019.mp4`), vagy a csúszkán (`FloatSlider`) időben visszafelé ugrott, a korábbi klipből visszamaradt `cached_levels` és `cached_spells` értékek, illetve a `prev_time` monotonitási korlátja hibásan felülbírálhatta az új klip vagy korábbi időlépés adatait.
+3. **Redundáns Inicializáció és Dupla Képkocka-Renderelés Videóváltáskor:**
+   - Korábban minden videóváltáskor újra lefutott a 8 minta-képkockás (`n_samples=8`) portré-illesztés és vörös gyűrűs minimap-címke kalibráció ($\sim 0.45\text{ s}$), ráadásul közben a `extract_spells_and_status` a minta-képkockákon a lassú Tesseract `extract_level_ocr` hívásokat is feleslegesen végrehajtotta.
+   - Emellett a widget `update_video` eseménykezelőjében a `time_slider.value = min(2.0, dur)` értékadás automatikusan elsütötte az `on_slider_change` callbacket (1. renderelés), majd a függvény végén expliciten is meghívta a `render_frame(time_slider.value)` függvényt (2. renderelés), megduplázva a videóváltási késleltetést.
+
+#### 2. Implementált Megoldások (Section 15 & Section 15.1)
+1. **Videónkénti Kontextus-Gyorsítótár (`self.video_context_cache`) és Teljes Állapot-Izoláció:**
+   - A `CompleteBroadcastPipeline.__init__` kapott egy `self.video_context_cache = {}` szótárat, amely az abszolút fájlelérési út (`os.path.abspath(video_path)`) alapján kulcsolva eltárolja az adott videóhoz feloldott `hud_mode`, `roster`, `icon_templates` és `cached_spells` struktúrákat.
+   - A `resolve_clip_roster_and_templates(video_path)` minden híváskor először alaphelyzetbe állítja a klip-specifikus futási állapotokat (`self.cached_levels = {1..10: 1}`, `self.prev_time = None`), majd ellenőrzi a `video_context_cache`-t:
+     - **Cache találat esetén:** $0.0\text{ ms}$ alatt, lemez- és modellművelet nélkül visszaállítja az adott kliphez tartozó HUD-módot, 10 hőst, a 16×16-os belső Re-ID sablonokat és az idézői varázslatokat (`copy.deepcopy`-vel).
+     - **Első betöltéskor:** elvégzi a feloldást, és elmenti az eredményt a `video_context_cache`-be.
+2. **Célzott Varázslat-Feloldás (`resolve_spells_only=True`) és Halott-Jelvény OCR Előszűrés:**
+   - Az `extract_spells_and_status(..., resolve_spells_only=False)` paraméterrel a klip-inicializálás (`resolve_clip_roster_and_templates`) során kihagyjuk a HP/Mana/Szint-OCR számításokat, és kizárólag a $20\times 20$-as idézői varázslat ikonokat párosítjuk.
+   - Az `extract_level_ocr` elejére bekerült egy gyors fényerő-előszűrő (`if int((gray >= 160).sum()) < 6: return self.cached_levels.get(p_idx, 1)`), amely sötét/halott hősportrék esetén azonnal visszatér, elkerülve a felesleges `tesseract.exe` alfolyamat-indításokat.
+3. **Időfüggetlen Képkocka-Vizsgálat (`inspect_at_timestamp`) és Dupla-Renderelés Megszüntetése (`_updating_video`):**
+   - Az `inspect_at_timestamp` minden tetszőleges csúszka-pozíció kiértékelése előtt visszaállítja a `self.cached_levels` és `self.prev_time` változókat, így a csúszka előre-hátra mozgatásakor (és videóváltáskor) mindig az adott másodperc valódi állapota jelenik meg.
+   - A `launch_interactive_inspector` videólistája mostantól tartalmazza a `'CVAT_Clips/clip_010.mp4'` és a `'Classic_clips/clip_019.mp4'` klipeket (valamint a további referencia LCK/Classic klipeket), az `_updating_video` jelzőbit pedig garantálja, hogy videóváltáskor pontosan egyetlen `render_frame` hívás fusson le.
+
+#### 3. Empirikus Validáció
+* **Többvideós Váltási Teszt (`CVAT_Clips/clip_010.mp4` $\leftrightarrow$ `Classic_clips/clip_019.mp4`):**
+  - `CVAT_Clips/clip_010.mp4` (BFX Game 1, LCK HUD): `hud_mode = 'lck'`, feloldott névsor: Kék (`Ambessa, XinZhao, Ryze, Ezreal, Karma`) vs. Piros (`Rumble, JarvanIV, Aurora, Yunara, Nautilus`), inicializáció: $0.45\text{ s}$, `inspect_at_timestamp(2.0s)`: $1.68\text{ s}$.
+  - `Classic_clips/clip_019.mp4` (Classic HUD): `hud_mode = 'classic'`, feloldott névsor: Kék (`Rumble, Vi, Yone, Ziggs, Nautilus`) vs. Piros (`Ksante, Maokai, Tristana, Ezreal, Leona`), inicializáció: $0.45\text{ s}$, `inspect_at_timestamp(2.0s)`: $1.59\text{ s}$.
+  - Visszaváltás `CVAT_Clips/clip_010.mp4`-re a `video_context_cache`-ből: **$0.000\text{ s}$** ($0.0\text{ ms}$) névsor- és sablon-visszaállítás, teljes állapot-izolációval.
+
+

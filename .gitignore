@@ -247,3 +247,8 @@ extracted_data.csv
 extracted_champions.csv
 lower_hud_data.csv
 hle_vs_t1_game1_lower_data.csv
+
+# --- Massive LCK 2026 Broadcast Datasets (> 100MB) ---
+LCK_Summer_2026_Cleaned_ML.csv
+LCK_Summer_2026_Raw_Master.csv
+LCK_Summer_Per_Match/

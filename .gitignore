@@ -212,10 +212,17 @@ __marimo__/
 
 # --- Large Media & Broadcast Stream Directories ---
 Streams/
+LCK Summer/
+Classic matches/
 CVAT_Clips/
 CVAT_Clips_BFX_Game1/
 Classic_clips/
 *.mp4
+*.webm
+
+# --- Local Tool Caches ---
+.keras/
+.matplotlib/
 
 # --- Large Datasets & Frame Extractions ---
 Data/

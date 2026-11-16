@@ -1428,5 +1428,104 @@ A League of Legends magas szintű e-sport (LCK) mérkőzésein előfordulnak oly
 A korábbi $\Delta T_{\max} = 2.0$ / $3.0$ korlát ilyen ritka, szélsőséges esetekben késleltethette volna a valós állapotregisztrációt. A $\Delta T_{\max} = 4.0$ beállítása teljes mértékben lefedi ezeket a fizikai csúcsokat.
 
 #### 2. Hatása a Zajszűrésre és az Adatintegritásra
-- **Zajkiszűrés:** A nyers közvetítési OCR toronyműtermékei a toronyszimbólum optikai konkatenációjából származnak (`1 	o 48`, `2 	o 28`, `3 	o 38 / 30`), amelyek $+18$-tól $+46$-ig terjedő ugrásokat produkálnak. A $\Delta T_{\max} = 4.0$ és a fizikai felső korlát ($T_{\max} = 11$) továbbra is **100%-os biztonsággal elveti az összes optikai átfolyást**.
+- **Zajkiszűrés:** A nyers közvetítési OCR toronyműtermékei a toronyszimbólum optikai konkatenációjából származnak (`1 \to 48`, `2 \to 28`, `3 \to 38 / 30`), amelyek $+18$-tól $+46$-ig terjedő ugrásokat produkálnak. A $\Delta T_{\max} = 4.0$ és a fizikai felső korlát ($T_{\max} = 11$) továbbra is **100%-os biztonsággal elveti az összes optikai átfolyást**.
 - **Jegyzőkönyvi Validáció:** Az újraszámított `LCK_Summer_2026_Cleaned_ML.csv` adathalmazon mind a 81 mérkőzés hivatalos jegyzőkönyvi ellenőrzése ([`official_lck_results.csv`](file:///e:/BME/League-of-Legends-Esport-Analitika-2026/official_lck_results.csv)) változatlanul **100.00%-os pontosságot ($81/81$)** ér el.
+
+---
+
+### 10.34. Adatszivárgás-Mentes Győzelmi Valószínűség Modellezés, Kauzális LSTM Javítás és Kalibráció (`Win_Probability_LCK_Summer_2026.ipynb`)
+
+A `10.30.`-as fejezetben rögzített kezdeti notebook-verzió kritikus felülvizsgálata során több módszertani hibát tártunk fel, amelyeket a [`Win probability.ipynb`](file:///d:/Info%20cuccok/BME/League-of-Legends-Esport-Analitika-2026/Win%20probability.ipynb) érintetlenül hagyása mellett teljes körűen javítottunk a [`Win_Probability_LCK_Summer_2026.ipynb`](file:///d:/Info%20cuccok/BME/League-of-Legends-Esport-Analitika-2026/Win_Probability_LCK_Summer_2026.ipynb) notebookban.
+
+#### 1. Feltárt Problémák és Adatszivárgás Kiküszöbölése
+1. **Korábbi LSTM jövő-szivárgás ($100.00\%$ AUC hiba):** A korábbi szekvenciális LSTM a teljes lezárt mérkőzést (`0 -> T_end`) dolgozta fel végponti kinyeréssel, így a végjátékbeli Nexus-ostrom információja közvetlenül elárulta a győztest a mindössze $17$ tesztmeccsen. Ezt **kauzális gördülő ablakozással** (`stride = 15s`, $7\,593$ tanító / $1\,963$ teszt ablak) váltottuk ki, kizárólag a múltbeli és jelenlegi állapotot használva.
+2. **Validációs adatszivárgás megszüntetése:** Korábban a teszthalmaz (`X_test`) szerepelt az XGBoost `eval_set` és a Keras `validation_data` paraméterében. Minden hiperparaméter-keresés ($C$ hangolás, 12 konfigurációs XGBoost grid search), early stopping és kalibráció mostantól szigorúan a $64$ tanítómeccsen belül futó **5-fold `StratifiedGroupKFold`** keresztvalidációval történik.
+3. **Egységes XGBoost bajnokválasztással (`With Champions`):** A $37$ telemetria-jellemzőt egyesítettük a kizárólag tanítóhalmaz-gyakoriság alapján szűrt ($\ge 6$ tanítómeccs) **$36$ meta-hős one-hot jelzővel** (`t100_champ_*`, `t200_champ_*`), megőrizve az **Overall Feature Importance** és a **Top 10 Influential Champions** rangsort is.
+4. **Notebook-futtatás stabilizálása:** A `jupyter nbconvert --execute` Windows/ZMQ deadlockját in-process futtatóval küszöböltük ki (~3 perces teljes futási idővel).
+
+#### 2. Miért volt gyenge a kauzális LSTM, és hogyan javult $+7.5\%$ feletti mértékben?
+Az első kauzális verzió (`67.35%` Acc / `0.7642` AUC) két okból maradt el a táblázatos modellektől:
+1. **Hiányzó `Masking` réteg a bal oldali nullás paddingre:** A meccs első 3 percében (`t < W`) a bal oldali `0.0` padding-lépések skálázás után is valós „átlagos meccsállapotként” jelentek meg az LSTM-ben, torzítva a rejtett állapotot. A `-999.0` padding + `Masking(mask_value=-999.0)` réteg bevezetése önmagában **`67.65% -> 71.42%`-ra** ($0.7875$ AUC) javította az `LSTM (Sequential)` modellt.
+2. **Túl sok paraméter kevés ($64$) meccsen és Markovi állapotjellemzők:** A `totalGold_diff`, `completed_items_diff`, `cum_CHAMPION_KILL_diff` stb. eleve kumulatívak (Markov-tulajdonság). A $37$ abszolút/térbeli jellemző helyett a `LoLWinPredictorLSTM` (`LSTM Optimized`) modellben $12$ kompakt differenciál- és időváltozót (`diff_cols + game_sec`), **20 lépéses (5 perces)** ablakot, `LSTM(32)` réteget (`dropout=0.2`, L2 `1e-3`) és `batch_size=64` tanítást alkalmaztunk. Ezzel az **Optimized LSTM** **`75.04%` pontosságot és `0.8182` ROC-AUC-ot** ért el (Platt-kalibrációval `75.19%` Acc, `0.1764` Brier, `0.0654` ECE).
+
+#### 3. Kalibrációs Vizsgálat (`Platt`, `Isotonic`, `Temperature Scaling` & `Calibration Plot`)
+A `Win probability.ipynb` `calibration_curve(..., n_bins=10, strategy='uniform')` módszertana alapján mind az 5 modellre elkészítettük a **Before vs. After Calibration** görbéket:
+- **Tanító- és teszthalmaz báziseltolódás + meccshossz torzítás:** Mivel a tanítóhalmazban $60.41\%$, a teszten $57.38\%$ a Kék győzelmek aránya, és a meccsek hossza eltérő (`1500–2800` képkocka), a súlyozatlan Platt-kalibráció pozitív intercept-eltolást (`+0.15..+0.17` logit) tanult be, rontva a küszöb körüli predikciókat. **Meccsenként egyenlő súlyozással** (`sample_weight = 1 / match_len`) ez a torzítás megszűnt:
+  - **XGBoost (With Champs):** A fák erős regularizációja (`min_child_weight=1500`, `reg_lambda=35`, medián `27` fa) miatt a nyers valószínűségek alulkonfidens S-görbét adtak (`ECE = 0.1256`). Meccssúlyozott **Isotonic Regression** kalibrációval az XGBoost **`75.16% -> 77.86%`** pontosságra, **`0.1831 -> 0.1772`** Brier-pontszámra és **`0.1256 -> 0.1082`** ECE-re javult.
+  - **ResMLP:** `BatchNormalization + Dropout + L2` regularizációja eleve közel optimális kalibrációt adott nyersen (**`ECE = 0.0556`**, **`Brier = 0.1777`**).
+
+#### 4. Végső Teszthalmaz Benchmark ($17$ érintetlen LCK Summer tesztmeccs)
+
+| Modell | Nyers Accuracy | ROC-AUC | Nyers Brier | Nyers ECE | Legjobb Kalibrált Variáns (Teszt) |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **1. Logistic Regression** ($C=0.001$) | $66.51\%$ | $0.7509$ | $0.2050$ | $0.0897$ | Isotonic: **$67.93\%$ Acc**, $0.2008$ Brier, **$0.0545$ ECE** |
+| **2. XGBoost (With Champs)** | **$75.16\%$** | **$0.8272$** | $0.1831$ | $0.1256$ | Isotonic: **$77.86\%$ Acc**, $0.1772$ Brier, $0.1082$ ECE |
+| **3. ResMLP** (Permutation Imp.) | $74.32\%$ | $0.8104$ | **$0.1777$** | **$0.0556$** | Nyersen legjobban kalibrált |
+| **4. LSTM (Sequential, `Masking`)** | $71.42\%$ | $0.7875$ | $0.1956$ | $0.0810$ | Platt: $71.47\%$ Acc, $0.1894$ Brier, $0.0630$ ECE |
+| **5. LSTM (Optimized, `diff+sec`)** | **$75.04\%$** | **$0.8182$** | $0.1801$ | $0.0878$ | Platt: **$75.19\%$ Acc**, **$0.1764$ Brier**, $0.0654$ ECE |
+
+#### 5. Főbb Jellemző-Fontosságok és Mentett Artefaktok (`Models/`)
+- **Top Features (XGBoost Gain):** `totalGold_diff` ($0.0759$), `cum_CHAMPION_KILL_diff` ($0.0555$), `t100_champ_JarvanIV` ($0.0541$), `t200_champ_Karma` ($0.0507$), `t200_champ_Caitlyn` ($0.0474$). Top bajnokok közé tartoznak még: `Jayce (Red)`, `Pantheon (Blue)`, `Ryze (Blue)`, `Lucian (Blue)`, `Seraphine (Blue)`, `Vi (Red)`, `Orianna (Red)`.
+- **ResMLP Permutation Importance (ROC-AUC Drop):** `totalGold_diff` ($0.1047$), `cs_diff` ($0.0392$), `completed_items_diff` ($0.0299$), `level_diff` ($0.0188$).
+- **Mentett fájlok és a `.pkl` állományok szerepe:**
+  - `Models/lck2026_scaler.pkl`: A betanított `StandardScaler` ($\mu, \sigma$), szükséges a `LogisticRegression`, `ResMLP` és `LSTM` modellek azonos skálázásához új adaton.
+  - `Models/lck2026_logistic_regression.pkl`: A scikit-learn logisztikus regressziós modell bináris `pickle` formátumban.
+  - `Models/lck2026_xgboost.json`, `Models/lck2026_resmlp.keras`, `Models/lck2026_lstm_sequential.keras`, `Models/lck2026_lstm_optimized.keras`, `Models/lck2026_model_benchmark_results.csv`.
+
+---
+
+## 11. 2026-os Klasszikus Nézői HUD Adaptáció, Automatikus Sebesség-Detektálás és Hibrid LCK + Classic Modell-Illesztés
+
+Míg a betanított közvetítési pipeline kizárólag LCK/profi adás-HUD-ra optimalizált elrendezésen tanult, egy webes felhasználói feltöltés jellemzően **Klasszikus (Spectator / `.rofl` visszajátszás)** felületű, gyakran gyorsított lejátszású videót tartalmaz. Ennek áthidalására mindhárom fő notebookot (`Image Recognition.ipynb`, `EDA_LCK_Summer_2026.ipynb`, `Win_Probability_LCK_Summer_2026.ipynb`) kiegészítettük a Klasszikus 2026-os HUD feldolgozásával, eloszlásközi összehasonlítással és tartomány-adaptált (LCK + Classic) hibrid tanítással.
+
+### 11.1. Data Dragon `16.22.1` Frissítés és 2026-os Classic HUD Geometriai Kalibráció (`Image Recognition.ipynb`)
+* **Statikus Asset Szinkronizáció:** A legfrissebb `16.22.1`-es Data Dragon kiadás letöltésével frissítettük a `Champion tiles/`, `Items/` és `Spells/` mappákat (`454/454` frissített ikon, köztük az átdolgozott `Viktor.png`, valamint `863` összevont tárgy az `item_data.json` fájlban). Ennek köszönhetően az újabb 2026-os hősök (`Zaahen`, `Yunara`, `Ambessa`, `Aurora`, `Hwei`, `Naafiri`, `Belveth`) sablonjai is hibátlanul illeszkedtek.
+* **Felső Eredményjelző és Torony-Számláló (`Cells 5, 7, 27, 76, 80, 86`):** A 2026-os klasszikus nézői HUD-on a csapatok toronyszáma az arany érték közvetlen szomszédságába került át. A pontos `1920x1080`-as ROI ablakok:
+  * Kék tornyok: `[10:42, 365:395]`, Kék arany: `[10:42, 418:485]`.
+  * Piros arany: `[10:42, 705:772]`, Piros tornyok: `[10:42, 795:825]`.
+  * Az arany OCR utófeldolgozó `_normalize_gold_str` segédfüggvény kijavítja a tipikus Tesseract/EasyOCR tévesztéseket (`1`, `L`, `I` karakterek `K`-vá alakítása a számjegyek végén).
+* **Oldalsó Játékos-HUD, Szintszámok és Szerep-Küldetés Slot:** A 2026-os nézői sávban megjelenő 3. lábbeli/szerep-küldetés ikon elkerülése érdekében az idézőiképesség-kivágásokat a portré melletti keskeny sávra szorítottuk (`sp1` `yb+4:yb+24`, `sp2` `yb+26:yb+46`). A kétjegyű hősszintek (`10..18`) levágásának elkerülésére a szintszám-ablakot `26 px` szélességűre bővítettük (`x ∈ [28, 54]` Kék, `x ∈ [1866, 1892]` Piros).
+
+### 11.2. Automatikus Lejátszási Sebesség (`4x`) Detektálás, 10 Meccses Kinyerés és Tisztítás
+* **Sebesség-Detektáló Motor (`Section 19` – `detect_classic_playback_speed`):** Mivel a `.rofl` visszajátszások rögzítése gyakran gyorsítva (`2x`, `4x`, `8x`) történik, a felvételek feldolgozása előtt automatikus sebességbecslés fut. A függvény több videó-időpontban kiolvassa a felső játékórát, medián-szűrt meredekséget számít a valós másodperc és a videó-másodperc hányadosából, majd kerekíti a diszkrét `[1.0, 2.0, 4.0, 8.0]` skálára. A `Classic matches` mappa mind a `10` darab `1920x1080`, `60.0 FPS` `.webm` felvételén a nyers mért meredekség `3.97x .. 4.02x` közé esett, így a rendszer mind a `10` fájlt automatikusan `4.0x` sebességűnek detektálta.
+* **Kötegelt Kinyerés (`extract_single_classic_match`, `run_classic_batch`):** `fps={speed}` paraméterű `ffmpeg` pipe-olással és `4`-worker párhuzamosítással (`fps=4` -> másodpercenként pontosan 1 játékbeli szekundumot reprezentáló képkocka) kinyertük a `10` mérkőzés teljes idősorát a `Classic_2026_Raw_Master.csv` (`12494.7 KB`, `16 569` sor, `100/100` felismert bajnok és idézőiképesség) fájlba.
+* **Tisztítási Pipeline és Spectator `VICTORY` Csapda (`EDA_LCK_Summer_2026.ipynb`, `Section 6.1`):**
+  * **Órahorgonyzás:** A nyers másodpercalapú órát `med_off + speed * video_sec` képlettel egyenesítettük ki az átmeneti OCR-kiugrások eltávolítására.
+  * **Mezőszűrés:** Játékosonkénti `CS` token-szűrés (`0..450` tartományban), kétlépcsős (`35`/`21` ablakú) arany mediánszűrő `±1500g` toleranciával, `max_jump=3.0, window=31` toronyszámszűrés, `rolling(19)` szint-simítás és `np.nanmean` térbeli koordináta-aggregálás. Az így kapott tiszta ML adathalmaz (`Classic_2026_Cleaned_ML.csv`, `15824.2 KB`) összesen `14 138` egy másodperces felbontású sort tartalmaz (`3` Kék + `7` Piros győzelem).
+  * **Vizuális Győzelem-Hitelesítési Tanulság:** A visszajátszó nézői mód (`Spectator`) a mérkőzés végén a Piros csapat győzelme esetén is kék `VICTORY` feliratot jelenít meg (például `#3 EUN1_4027405769`), ezért az automatizált címkézés önmagában nem támaszkodhat a felirat színére vagy sablonjára, hanem a Nexus pusztulását/csapat-statisztikákat kell ellenőrizni.
+
+| Match ID | Időtartam (s / perc) | Győztes | Végső Arany (B–R) | Végső Kill (B–R) | Tornyok (B–R) | Végső CS (B–R) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `EUN1_4027217400` | `1513s` / `29.7m` | `RED` | `60.6k – 64.7k` | `28 – 36` | `3 – 7` | `884 – 971` |
+| `EUN1_4027241458` | `1937s` / `37.8m` | `RED` | `83.0k – 83.4k` | `38 – 36` | `3 – 8` | `1137 – 1269` |
+| `EUN1_4027405769` | `1409s` / `26.8m` | `RED` | `54.0k – 65.1k` | `25 – 40` | `2 – 9` | `826 – 820` |
+| `EUN1_4027830488` | `1152s` / `22.3m` | `BLUE` | `50.6k – 35.7k` | `21 – 6` | `6 – 1` | `826 – 654` |
+| `EUN1_4028059865` | `1595s` / `30.0m` | `BLUE` | `68.4k – 57.5k` | `41 – 33` | `6 – 3` | `849 – 801` |
+| `EUN1_4028069164` | `1190s` / `24.5m` | `RED` | `47.6k – 54.4k` | `15 – 24` | `1 – 8` | `776 – 869` |
+| `EUN1_4028096729` | `908s` / `18.8m` | `RED` | `32.8k – 48.0k` | `11 – 39` | `0 – 7` | `460 – 674` |
+| `EUN1_4028200221` | `1188s` / `23.6m` | `BLUE` | `57.5k – 46.7k` | `34 – 17` | `7 – 1` | `764 – 715` |
+| `EUN1_4028253911` | `1652s` / `32.0m` | `RED` | `57.9k – 67.1k` | `25 – 34` | `4 – 7` | `846 – 888` |
+| `EUN1_4028279572` | `1594s` / `31.1m` | `RED` | `63.0k – 72.0k` | `32 – 42` | `6 – 9` | `880 – 971` |
+
+* **Tartomány-Eltérés (`EDA_LCK_Summer_2026.ipynb`, `Section 6.2`):** Az összehasonlító EDA markáns játékmenet-különbséget mutatott a két forrás között: míg az `LCK Pro (81 meccs)` átlagos meccshossza **`32.9 perc`**, az összesített kill/meccs **`26.8`** és `106` egyedi hős szerepel benne, addig a `Classic (10 meccs)` minta átlagosan csak **`27.7 perc`** hosszú, több mint kétszeres (`57.7` kill/meccs) harci tempóval és `74` egyedi hőssel (amelyből csak `46` esik egybe az LCK bajnok-halmazzal).
+
+### 11.3. Zero-Shot Kiértékelés és Domain-Adaptált Hibrid (`Models/hybrid2026_*`) Modell-Illesztés (`Win_Probability_LCK_Summer_2026.ipynb`)
+* **Zero-Shot LCK -> Classic Teljesítmény (`Cell 31`):** Az eredeti, tisztán LCK mérkőzéseken tanított modellek (`Models/lck2026_*` változatlanul hagyva) kiértékelése mind a `10` Classic mérkőzésen (`>20m` és teljes idősoros mutatók):
+  * `Logistic Regression`: `Full Acc = 76.93%` | `>20m Acc = 88.31%` | `AUC = 0.8438` | `Brier = 0.1544` | `LogLoss = 0.4615` | `Final-30s = 10/10`
+  * `XGBoost (With Champs)`: `Full Acc = 71.63%` | `>20m Acc = 72.40%` | `AUC = 0.9380` | `Brier = 0.1935` | `LogLoss = 0.5752` | `Final-30s = 9/10`
+  * `ResMLP`: `Full Acc = 76.06%` | `>20m Acc = 83.09%` | `AUC = 0.7725` | `Brier = 0.1625` | `LogLoss = 0.6177` | `Final-30s = 8/10`
+  * `LSTM (Optimized)`: `Full Acc = 65.31%` | `>20m Acc = 73.52%` | `AUC = 0.8865` | `Brier = 0.2193` | `LogLoss = 0.6291` | `Final-30s = 8/10`
+* **Hibrid Tanítási Felosztás és Validációs Védelem:** A kaotikus, magas kill-számú SoloQ környezethez való alkalmazkodáshoz közös LCK + Classic hibrid tanítást építettünk:
+  * **Tanítóhalmaz:** `64 LCK + 7 Classic` mérkőzés, ahol a Classic sorok **`3.0x`** mintasúlyt kaptak.
+  * **Tesztelőhalmaz:** szigorúan leválasztott `17 LCK + 3 Classic` mérkőzés (Classic teszt: `['EUN1_4027830488', 'EUN1_4028069164', 'EUN1_4028279572']`).
+  * **Kiegyensúlyozott Belső Validáció:** Az LCK-sorszerű `GroupShuffleSplit` helyett **`StratifiedGroupKFold(n_splits=5)`** belső felosztást alkalmaztunk a tanítóhalmazon belül, megelőzve az osztályarány-eltolódást és a túlilleszkedést (`Hybrid val y_mean = 0.582` vs. `train y_mean = 0.576`; `Hybrid XGB best_iteration = 33`).
+* **Összehasonlító Eredmények a Leválasztott Teszthalmazon (`LCK-Only` -> `Hybrid`):**
+
+| Modell | Classic Test Acc (`LCK -> Hybrid`) | Classic Brier (`LCK -> Hybrid`) | LCK Test Acc (`LCK -> Hybrid`) | Hybrid LCK Brier |
+| :--- | :--- | :--- | :--- | :--- |
+| `Logistic Regression` | `71.67% -> 72.84%` | `0.1659 -> 0.1552` | `66.53% -> 73.78%` | `0.1729` |
+| `XGBoost (With Champs)` | `56.50% -> 69.08%` | `0.2743 -> 0.1861` | `73.87% -> 80.98%` | `0.1618` |
+| `ResMLP` | `74.97% -> 74.26%` | `0.1338 -> 0.2100` | `70.36% -> 74.70%` | `0.1752` |
+| `LSTM (Optimized)` | `57.83% -> 65.42%` | `0.2478 -> 0.2247` | `77.82% -> 75.56%` | `0.1666` |
+
+* **Perzisztált Modell-Artefaktok (`Models/hybrid2026_*`):** Az eredeti `Models/lck2026_*` súlyok érintetlenül maradtak, míg a hibrid adaptáció kimenetei az alábbi fájlokba kerültek mentésre: `scaler.pkl` (`1.3 KB`), `logistic_regression.pkl` (`0.9 KB`), `xgboost.json` (`60.5 KB`), `resmlp.keras` (`229.3 KB`), `lstm_optimized.keras` (`108.9 KB`). Az `XGBoost` (`+12.58%` Classic pontosság, `-0.0882` Classic Brier javulás és `+7.11%` LCK javulás), a `Logistic Regression` és az `LSTM` egyértelműen profitált a két tartomány közös tanításából.

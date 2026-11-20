@@ -1529,3 +1529,50 @@ Míg a betanított közvetítési pipeline kizárólag LCK/profi adás-HUD-ra op
 | `LSTM (Optimized)` | `57.83% -> 65.42%` | `0.2478 -> 0.2247` | `77.82% -> 75.56%` | `0.1666` |
 
 * **Perzisztált Modell-Artefaktok (`Models/hybrid2026_*`):** Az eredeti `Models/lck2026_*` súlyok érintetlenül maradtak, míg a hibrid adaptáció kimenetei az alábbi fájlokba kerültek mentésre: `scaler.pkl` (`1.3 KB`), `logistic_regression.pkl` (`0.9 KB`), `xgboost.json` (`60.5 KB`), `resmlp.keras` (`229.3 KB`), `lstm_optimized.keras` (`108.9 KB`). Az `XGBoost` (`+12.58%` Classic pontosság, `-0.0882` Classic Brier javulás és `+7.11%` LCK javulás), a `Logistic Regression` és az `LSTM` egyértelműen profitált a két tartomány közös tanításából.
+
+
+### 11.4. A `Win_Probability_LCK_Summer_2026.ipynb` Véglegesítése (`ResMLP` Törlése, 3-Paraméteres XGBoost GridSearch és Tiszta Kalibrációs Kiértékelés)
+
+A felhasználói döntés (**A opció**) alapján egyszerűsítettük és egységesítettük a [`Win_Probability_LCK_Summer_2026.ipynb`](file:///e:/BME/League-of-Legends-Esport-Analitika-2026/Win_Probability_LCK_Summer_2026.ipynb) notebookot (`30` cella):
+1. **Neurális háló (`ResMLP`) eltávolítása:** Kikerült a teljes `ResMLP` definíció, tanítás, értékelés, valamint az átviteli (Classic/Hybrid) összehasonlításokból és a `Models/` könyvtárból (`lck2026_resmlp.keras`, `hybrid2026_resmlp.keras` törölve).
+2. **3-paraméteres XGBoost GridSearch (`learning_rate`, `max_depth`, `n_estimators`):** Az XGBoost 5-szörös csoportos keresztvalidációs (`StratifiedGroupKFold`) rács-keresése közvetlenül a három fő fa-hiperparaméterre futott ($3 \times 2 \times 4 = 24$ konfiguráció: `learning_rate` $\in [0.03, 0.05, 0.08]$, `max_depth` $\in [3, 4]$, `n_estimators` $\in [20, 35, 60, 100]$), a legkisebb kalibrációs hiba (`CV_LogLoss`) alapján választva (`best_cfg = {'learning_rate': 0.03, 'max_depth': 4, 'n_estimators': 20}`, `CV_LogLoss = 0.6449`).
+3. **Post-hoc kalibrációs rétegek eltávolítása (`Calibration & GridSearch Calibration Analysis`):** Platt/Isotonic/Temperature Scaling helyett tiszta, intrinszik kalibrációs elemzés (`Brier Score`, `LogLoss`, `ECE`), 10-sávos `Calibration Plot (Reliability Diagram)` és a 3-paraméteres GridSearch `CV_LogLoss` érzékenységi görbéje került a notebookba.
+
+#### Végső LCK Teszteredmények (`17` félretett mérkőzés, `29 307` sor / `1 963` LSTM ablak)
+
+| Modell | Accuracy | ROC-AUC | Brier Score ($\downarrow$) | LogLoss ($\downarrow$) | ECE ($\downarrow$) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Logistic Regression** (`C=0.001`) | $66.51\%$ | $0.7509$ | $0.2050$ | $0.5883$ | $0.0897$ |
+| **XGBoost (With Champs)** (`lr=0.03, d=4, n=20`) | $69.02\%$ | **$0.8448$** | $0.2013$ | $0.5904$ | $0.1713$ |
+| **LSTM (Sequential)** (`12 x 37`) | $72.54\%$ | $0.7987$ | $0.1876$ | $0.5566$ | **$0.0680$** |
+| **LSTM (Optimized)** (`LoLWinPredictorLSTM`, `20 x 12`) | **$75.65\%$** | $0.8277$ | **$0.1765$** | **$0.5302$** | $0.0823$ |
+
+#### Zero-Shot Classic (`10` meccs) és Hibrid LCK+Classic (`64+7` tanító / `17+3` teszt) Eredmények
+- **Zero-Shot LCK $\to$ Classic (`10` meccs):** `Logistic Regression`: $76.93\%$ Acc ($>20\text{p}$: $88.31\%$, $10/10$ végkimenetel); `XGBoost`: $53.39\%$ Acc (AUC $0.9044$, $9/10$); `LSTM (Optimized)`: $61.66\%$ Acc ($>20\text{p}$: $70.03\%$, AUC $0.8748$, $9/10$).
+- **Hibrid Adaptáció (`Hybrid`):** A közös tanítás a félretett `3` Classic tesztmeccsen `46.54% -> 68.95%`-ra (Brier `0.2608 -> 0.1872`), a `17` LCK tesztmeccsen pedig **`71.81% -> 81.57%`**-ra (Brier `0.1547`) javította az `XGBoost`-ot, míg az `LSTM (Optimized)` Classic-on `48.35% -> 64.08%`-ra javult (`LCK`: `77.02%`, Brier `0.1603`).
+
+
+### 11.5. A `Classic` Képfelismerési Telemetria és a Hivatalos Riot Match-v5 API Összefűzése és Auditja (`Scraping and Preparations.ipynb`)
+
+A frissített `RIOT_API_KEY` segítségével a [`Scraping and Preparations.ipynb`](file:///e:/BME/League-of-Legends-Esport-Analitika-2026/Scraping%20and%20Preparations.ipynb) meglévő Match-v5 és Timeline feldolgozó függvényeit (`get_match_data_from_id`, `get_match_timeline`, `process_match_to_df`, `process_timeline_to_frames_full`, `process_timeline_events_full`, `region="europe"`) kiterjesztve mind a `10` darab `EUN1_*` Classic mérkőzéshez lekérdeztük a hivatalos Riot szerveroldali naplókat (`Data/Classic_API/classic_api_matches.csv`, `classic_api_frames.csv`, `classic_api_events.csv` — `100` játékos-összegzés, `2 910` perces állapotsor, `10 906` ezredmásodperces esemény), és másodpercre pontosan összefűztük a videóból kinyert [`Classic_2026_Cleaned_ML.csv`](file:///e:/BME/League-of-Legends-Esport-Analitika-2026/Classic_2026_Cleaned_ML.csv) adathalmazzal (`Data/Classic_API/Classic_2026_Fused_CV_API.csv`, `14 138` sor $\times$ `196` oszlop).
+
+#### 1. Számítógépes Látás / OCR Pontossági Audit (Riot Szerver Ground Truth ellenében)
+* **Végeredmény és Végjáték-szintű Egyezés:** A CV alapú célváltozó (`target_win_t100`) **10/10 ($100.0\%$)** meccsen pontosan megegyezett a Riot szerver hivatalos `win` flagjével (még az olyan félrevezető `Spectator` piros győzelmeknél is, mint a kék `VICTORY` feliratot mutató `EUN1_4027405769`).
+* **Folytonos Telemetria (`N = 271` perces állapotszinkron):**
+  * **Csapatarany (`totalGold_t100/t200`, `totalGold_diff`):** **$r = 1.0000$** (`diff`: $r = 0.9995$), **Median AE = $30\text{–}34\text{ g}$** (`MAE = 55.0–59.3 g`) — ami gyakorlatilag eléri a közvetítési `0.1K` kerekítés elméleti alsó határát!
+  * **Creep Score (`totalCS`):** **$r = 1.0000$**, **Median AE = $0.00$ CS** (`MAE = 1.09–1.40` CS).
+  * **Életerő-arány (`avgHpPct`, HSV pixelarány-mérés vs. szerver `stat_health / stat_healthMax`):** **$r = 0.9890$ (Kék) / $0.9771$ (Piros)**, **Median AE = $2.72\%\text{–}3.49\%$** (`MAE = 3.43%–4.05%`).
+  * **1 másodperces Eseménykövetés (`14 138` mp):** Kék gyilkosságok `MAE = 0.118` (`±1` hibahatáron belül **$99.9\%$**), Piros gyilkosságok `MAE = 0.040` (`±1`-en belül **$99.8\%$**); gyilkossági detekció medián késleltetése **`+0.00s`**. Pre-8 tornyok pontos egyezése Kék oldalon **`99.4\%$** (`MAE = 0.041`).
+  * **Minimap Lokalizáció (`2 103` bajnok-perc megfigyelés):** Élő bajnokoknál a medián euklideszi távolsághiba **`800.2` egység** (a $14\,820$-as pálya $5.4\%$-a; a megfigyelések $73.4\%$-a $1500$ egységen belül esik), az átlag (`2 316.0`) főként a csapatharcok/bázis alatti ikon-átfedések miatti kiugrókból fakad.
+
+#### 2. Három Újonnan Feltárt OCR/Pipeline Jelenség (Kizárólag az API-összevetésből!)
+1. **Kétjegyű Toronyszámláló Csonkolás (`10 -> 1`, `11 -> 1`):** Az `EUN1_4028200221` és hasonló meccsek végén, amikor 8–11 torony állt fent a kijelzőn, a Spectator HUD torony-kivágásánál a Tesseract levágta a második számjegyet (`10/11` helyett `1`-et olvasott), a `window=31` medián-szűrő pedig elnyelte a gyors végjátékbeli Nexus-torony ledöntéseket — ezért ragadt be a CV toronyérték `6–7` körül a valós `9–11` helyett.
+2. **Szint-számláló Monoton Beragadás (`11 -> 14`, `13 -> 15`, `15 -> 18`):** A kerek bajnokszint-jelvényeken az `1`-es és `4`-es, valamint `3`-as és `5`-ös számjegyek rövid optikai tévesztése (`11 -> 14`) a `np.maximum.accumulate` miatt tartós `+3` szintű elcsúszást rögzített (`totalLevel MAE = 3.6`, `level_diff r = 0.6557`), amihez az újabb Season 16 (`Patch 16.22`) felső ösvényes `level=20` mechanika és a `clip(1, 18)` is hozzájárult (`EUN1_4027241458`).
+3. **Az Epikus Szörnyek (Sárkányok) Domináns Szerepe vs. Videó/API Komplementaritás:** A `9/9` nem-feladásos Classic meccset szigorúan az a csapat nyerte, amelyik **több Sárkányt szerzett** (még a `-624 g`-os szoros `EUN1_4027241458` meccset is `2–3` sárkány mellett nyerte a Piros csapat!).
+
+#### 3. Leave-One-Match-Out Ablációs Vizsgálat (`10` Classic meccs, `LogReg C=0.01`)
+* `Video CV Only (12 jellemző)`: `Acc = 79.00%` | **`AUC = 0.7690`** | `Brier = 0.1762` | `LogLoss = 0.5968`
+* `CV + Level-beragadás javítása (api_level_diff)`: `Acc = 78.97%` | **`AUC = 0.7820`** | `Brier = 0.1708` | `LogLoss = 0.5646`
+* `CV + Epikus Szörnyek (Dragon/Baron/Grubs/Herald)`: `Acc = 83.01%` | **`AUC = 0.8952`** | `Brier = 0.1169` | `LogLoss = 0.3486`
+* `Riot API Only (60s Frame + Események)`: `Acc = 83.04%` | `AUC = 0.8831` | `Brier = 0.1222` | `LogLoss = 0.3651`
+* **Optimális Fúzió (1s CV Gold/Kills/HP/Alive + API Objektívák/XP/Tornyok):** **`Acc = 86.03%`** | **`AUC = 0.9301`** | **`Brier = 0.0922`** | **`LogLoss = 0.2742`** (`api_dragons_diff` standardizált log-odds súlya `+2.193`, megelőzve az aranykülönbséget `+1.259`).
